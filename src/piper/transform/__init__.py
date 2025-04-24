@@ -93,7 +93,7 @@ def run(args=None):
     config = load_piper_config(args.config)
 
     # Call play with the appropriate parameters
-    play(
+    output_filename = play(
         config, 
         args.dataset_input
     )
