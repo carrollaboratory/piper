@@ -19,7 +19,7 @@ def play(config, dataset,
          projection_dir=None, 
          projection_version=None,
          harmony_dir=None,
-         whistle_entry=None,
+         whistle_src=None,
          outdir=None,
          whistle_path="whistle"): 
     
@@ -29,7 +29,7 @@ def play(config, dataset,
         whistle_path, 
         "-harmonize_code_dir_spec", harmony_dir, 
         "-input_file_spec", dataset.name, 
-        "-mapping_file_spect", whistle_entry, 
+        "-mapping_file_spect", whistle_src, 
         "-lib_dir_spec", projection_directory,
         "-verbose",
         "-output_dir", outdir
