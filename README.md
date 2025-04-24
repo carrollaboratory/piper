@@ -1,5 +1,8 @@
 # piper
 A Cloud friendly version of NCPI Whistler
 
-To install:
+# Tool name
+chant -h
+
+## To install:
 pip install -e .
