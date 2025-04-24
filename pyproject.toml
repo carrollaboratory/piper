@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools"] #, "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+#[tool.setuptools_scm]
+#version_file = "locutus/_version.py"
+
+[project]
+name = "locutus"
+authors = [
+    {name = "Eric Torstenson", email="eric.s.torstenson@vumc.org"},
+    {name = "Yelena Cox", email="yelena.cox@vumc.org"}
+]
+description = "FHIR ETL Tools."
+readme = "README.md"
+requires-python = ">3.10"
+keywords = ["FHIR", "Research Data"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+                "PyYAML",
+                "rich"
+                ]
+
+dynamic = ["version"]
+
+[tool.setuptools.packages.find]
+where = ["src"]  # list of folders that contain the packages (["."] by default)
+
+
+#[project.scripts]
+play = "piper.transform:run"
