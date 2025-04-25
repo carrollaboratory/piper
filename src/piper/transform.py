@@ -5,7 +5,7 @@ from pathlib import Path
 from argparse import ArgumentParser, FileType
 
 # This will load the configuration from the piper.yaml file
-from config import load_piper_config
+from .config import load_piper_config
 
 import sys
 
