@@ -5,7 +5,7 @@ from pathlib import Path
 from argparse import ArgumentParser, FileType
 
 # This will load the configuration from the piper.yaml file
-from piper import load_piper_config
+from config import load_piper_config
 
 import sys
 
@@ -19,7 +19,7 @@ def play(config, dataset,
          projection_dir=None, 
          projection_version=None,
          harmony_dir=None,
-         whistle_src=None,
+         whistle_entry=None,
          outdir=None,
          whistle_path="whistle"): 
     
@@ -29,7 +29,7 @@ def play(config, dataset,
         whistle_path, 
         "-harmonize_code_dir_spec", harmony_dir, 
         "-input_file_spec", dataset.name, 
-        "-mapping_file_spect", whistle_src, 
+        "-mapping_file_spect", whistle_entry, 
         "-lib_dir_spec", projection_directory,
         "-verbose",
         "-output_dir", outdir
@@ -93,7 +93,10 @@ def run(args=None):
     config = load_piper_config(args.config)
 
     # Call play with the appropriate parameters
-    output_filename = play(
+    play(
         config, 
         args.dataset_input
     )
+
+if __name__ == "__main__":
+    run()

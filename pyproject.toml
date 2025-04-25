@@ -29,5 +29,5 @@ dynamic = ["version"]
 where = ["src"]  # list of folders that contain the packages (["."] by default)
 
 
-#[project.scripts]
-chant = "piper.transform:run"
+[project.scripts]
+buildfhir = "piper.transform:run"
