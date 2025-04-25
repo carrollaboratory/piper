@@ -9,27 +9,29 @@ from .config import load_piper_config
 
 import sys
 
+import pdb
+
 from subprocess import run
 ## Configuration Logic:
 ## Command line arguments always take priority over values from the config
 ##   ie the default version of the projection should be overridden by 
 ##   whatever is passed as an argument, if such an argument exists. 
 ## 
-def play(config, dataset, 
-         projection_dir=None, 
-         projection_version=None,
-         harmony_dir=None,
-         whistle_entry=None,
-         outdir=None,
+def buildfhir(config, dataset, 
+         module_path=None,          # Path to the module root dir (i.e. projector/harmonized)
+         projection_version=None,   # The version to be run (i.e. current)
+         harmony_dir=None,          # directory where harmony file lives
+         whistle_src=None,          # Path to what we are currently calling the _entry.wstle file
+         outdir=None,               # Where is the output going to be written
          whistle_path="whistle"): 
     
-    projection_directory = Path(projection_dir) / projection_version 
+    projection_directory = Path(module_path) / projection_version 
 
     command = [
         whistle_path, 
         "-harmonize_code_dir_spec", harmony_dir, 
-        "-input_file_spec", dataset.name, 
-        "-mapping_file_spect", whistle_entry, 
+        "-input_file_spec", dataset, 
+        "-mapping_file_spect", whistle_src, 
         "-lib_dir_spec", projection_directory,
         "-verbose",
         "-output_dir", outdir
@@ -83,6 +85,11 @@ def run(args=None):
         help="YAML Configuration with information about the projection library"\
           ", versioning and defaults for harmony files, etc. "
     )
+    parser.add_argument(
+        "--harmony", 
+        type=str, 
+        help="Directory where the harmony files lives."
+    )
 
     # TODO: Add all of the necessary arguments
 
@@ -92,10 +99,16 @@ def run(args=None):
     # Build the config 
     config = load_piper_config(args.config)
 
+    if (args.harmony is None):
+        args.harmony = config['harmony']['path']
+
+    pdb.set_trace()
+
     # Call play with the appropriate parameters
-    play(
+    buildfhir(
         config, 
-        args.dataset_input
+        dataset=args.dataset_input.name, 
+        harmony_dir=args.harmony
     )
 
 if __name__ == "__main__":
