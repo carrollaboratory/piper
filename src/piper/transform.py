@@ -85,12 +85,31 @@ def run(args=None):
     )
 
     # TODO: Add all of the necessary arguments
+    parser.add_argument(
+        "--harmony",
+        type=FileType("rt"),
+        help="This is the fully compiled FHIR ConceptMap that Whistle expects."
+    )
+
+    parser.add_argument(
+        "--output",
+        type=FileType("rt"),
+        help="The FHIR output."
+    )
+
+    parser.add_argument(
+        "-m",
+        "--module",
+
+    )
 
     # Parse the arguments
     args = parser.parse_args(args)
 
     # Build the config 
     config = load_piper_config(args.config)
+    # If DATASET_INPUT is none, pull harmony out of config
+    # get user input from command line arguments DATASET_INPUT, 
 
     # Call play with the appropriate parameters
     play(
