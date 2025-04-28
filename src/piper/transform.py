@@ -92,19 +92,25 @@ def run(args=None):
     )
 
     parser.add_argument(
+        "--output-dir",
+        default="output",
+        type=str
+    )
+
+    parser.add_argument(
         "--output",
-        type=FileType("rt"),
+        type=str,
         help="The FHIR output."
     )
 
     parser.add_argument(
         "-m",
         "--module",
-
+        type=str,
     )
 
     # Parse the arguments
-    args = parser.parse_args(args)
+    args = parser.parse_args(args) 
 
     # Build the config 
     config = load_piper_config(args.config)
