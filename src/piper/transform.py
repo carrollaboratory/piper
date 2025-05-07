@@ -45,18 +45,11 @@ def buildfhir(config, dataset,
         sys.exit(1)
     else:
         final_result = f"{outdir}/{Path(dataset).stem}.output.json"
-        print(dataset)
-        # final_result = f"{outdir}/{str(dataset.name).split('/')[-1].replace('.json', '.output.json')}"
         print(f"🎶 Beautifully played.🎵 \nResulting File: {final_result}")
 
-    # return f"{outdir}/{Path(dataset.name).stem}.output.json"
     return final_result
 
-
-
-
 def run(args=None):
-    print("I'M RUNNING!!!!")
     """
     This is the entrypoint for CLI runs where we are calling play directly. 
     
@@ -152,8 +145,6 @@ def run(args=None):
     else:
         args.dataset_input = args.dataset_input.name
 
-    if (args.module is None):
-        args.module = config['projections']['default_module']
 
     if (args.harmony is None):
         args.harmony = config['harmony']['path']
@@ -161,9 +152,16 @@ def run(args=None):
     if (args.projection_version is None):
         args.projection_version = config['projections']['default_version']
 
+# Check if a module is specified by the user, otherwise use the default
+    if args.module is None:
+        args.module = config['projections']['default_module']
+    elif args.module not in config['projections']['modules']:
+        raise KeyError(f"Module '{args.module}' not found in config file.")
+    elif not Path(config['projections']['modules'][args.module]['path']).exists():
+        # User input module found in config file, but the path to that file cannot be found (i.e. file does not exist)
+        raise FileNotFoundError(f"Module '{args.module}' does not exist.")
 
-    proj_module = config['projections']['modules'][args.module]
-
+    proj_module = config['projections']['modules'][args.module]    
 
     # use Path object to make output directory that's the same as the output directory.
     # if it doesn't exist, create it. 
@@ -173,9 +171,6 @@ def run(args=None):
         output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    #rename outdir file to what the user specified, IF they specified something (see line 51 for how outdir works)
-    # check if user-specified inputs exist (module, version), and throw error if it doesn't (maybe Path(path).exists() ?)
-    
     # Call play with the appropriate parameters
     buildfhir(
         config=config, 
