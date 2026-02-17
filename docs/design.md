@@ -22,12 +22,16 @@ The system follows a modular pipeline. Each piper sub-command is designed to be 
 
 ```mermaid
 graph TD
-    A[Relational DB] -->|SQLAlchemy| B(piper.transform)
+    A1[SQLAlchemy-LinkML] --> A[piper.LinkMLModelLoader]
+    A --> B(piper.transform)
+    A2[Relational DB] --> A
     B -->|Jinja2 Templates| C[FHIR JSON Resources]
     C --> D{piper.validate}
+    D --> C1[FHIR Server]
     D -->|Invalid| E[Error Logs / Quarantine]
     D -->|Valid| F(piper.load)
     F --> G[Dewrangle Server]
+    
 ```
 
 ### Key Components
