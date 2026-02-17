@@ -1,3 +1,8 @@
+# Local stuff
+.envrc
+.direnv
+.bash_history_local
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

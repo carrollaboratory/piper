@@ -2,7 +2,7 @@
 A Cloud friendly version of NCPI Whistler
 
 # Tool name
-buildfhir -h
+TBD
 
 ## To install:
 pip install -e .

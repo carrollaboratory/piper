@@ -1,33 +1,50 @@
 [build-system]
-requires = ["setuptools"] #, "setuptools-scm"]
+requires = [
+    "setuptools>=61.0",
+    "setuptools_scm"
+]
 build-backend = "setuptools.build_meta"
 
-#[tool.setuptools_scm]
-#version_file = "locutus/_version.py"
+[tool.setuptools-git-versioning]
+enabled = true
 
 [project]
-name = "piper"
+name = "Piper"
 authors = [
-    {name = "Eric Torstenson", email="eric.s.torstenson@vumc.org"},
-    {name = "Yelena Cox", email="yelena.cox@vumc.org"}
+  { name = "Eric Torstenson", email = "eric.s.torstenson@vumc.org" },
+  { name = "Yelena Cox", email="yelena.cox@vumc.org"}
 ]
-description = "FHIR ETL Tools."
+description = "Extract data from RDB, transform, Validate and load to FHIR."
 readme = "README.md"
-requires-python = ">3.10"
-keywords = ["FHIR", "Research Data"]
-classifiers = [
-    "Programming Language :: Python :: 3",
-]
-dependencies = [
-                "PyYAML",
-                "rich"
-                ]
+requires-python = ">=3.13"
 
 dynamic = ["version"]
 
-[tool.setuptools.packages.find]
-where = ["src"]  # list of folders that contain the packages (["."] by default)
+classifiers = [
+    "Programming Language :: Python :: 3",
+]
 
+dependencies = [
+  "rich",
+  "linkml>=1.9.1",
+  "PyYAML",
+  "duckdb",
+  "psycopg[binary]"
+]
+
+[project.optional-dependencies]
+dev = [
+    "rich",
+    "pytest",
+]
+
+[tool.setuptools_scm]
+version_file = "src/piper/_version.py"
+
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [project.scripts]
-buildfhir = "piper.transform:run"
+play = "piper.transform:run"
