@@ -77,3 +77,4 @@ graph TD
 
 1. Performance overhead of network-based FHIR validation for large datasets.
 2. Strategy for handling circular references in FHIR resources during the load phase.
+3. Does it make sense to separate the Jinja template into its own repo to support different transforms (i.e. different source models or different IGs, etc.)
