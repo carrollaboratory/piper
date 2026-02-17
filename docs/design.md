@@ -49,7 +49,7 @@ graph TD
 | Component | Description |
 |-----------|-------------|
 | **LinkML Data Model** | Defines the source-of-truth SQLAlchemy classes used by Jinja for projection. |
-| **Jinja Templates** | One `.j2` file per FHIR Resource level (e.g., `Patient.j2`, `Observation.j2`). |
+| **Jinja Templates** | One `.j2` file per FHIR Resource / Data Model (e.g., `Subject.j2`, `SubjectAssertion.j2`). |
 | **Jinja Mapper** | A lookup table handling cases where one SQLAlchemy class feeds multiple templates. |
 | **Resource List** | An optional filter (JSON/YAML) to scope the ETL run. |
 
