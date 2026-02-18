@@ -1,0 +1,14 @@
+db:
+    # For users, we provide convenience database management
+    # For orchestration calls, we would be better off using ENV I assume
+    local:
+        uri: duckdb:///example/dbt.duckdb
+        db_schema_name: main_gregor_synthetic_tgt_data
+
+    # Help identify target relationships for base extraction.
+    # In the example below, {} will be replaced with the class name from the
+    # linkml model.
+    table_name_template: tgt_{}
+data_model:
+    schema: ../src/acr_harmonized_data_model/schema/acr_harmonized_data_model.yaml
+    alchemy_classes: acr.py

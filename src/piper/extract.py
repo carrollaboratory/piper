@@ -25,13 +25,6 @@ for varname, rel in inspect(Subject).relationships.items():
 
 """
 
-if is_interactive():
-    try:
-        from rich import print
-    except ImportError:
-        # Should I report that their output will suck?
-        pass
-
 
 def exec():
     parser = ArgumentParser(
