@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import logging
 import sys
 from argparse import ArgumentParser, FileType
 from pathlib import Path
@@ -29,11 +30,22 @@ def run():
         help="Directory where output files are written.",
     )
     parser.add_argument(
+        "-l",
+        "--log-level",
+        default="INFO",
+        choices=["NOTSET", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"],
+        help="Log level",
+    )
+    parser.add_argument(
         "config",
         type=FileType("rt"),
-        required=True,
+        nargs="+",
         help="YAML configuration for data extraction",
     )
     args = parser.parse_args()
+    setup_logging(args.log_level)
 
-    print(f"Hello world\n{args}! TBD")
+    logging.info(f"Piper Transform: {','.join([f.name for f in args.config])}")
+
+    logging.warn("This is a warning")
+    logging.info(f"Hello world\n{args}! TBD")
