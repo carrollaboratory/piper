@@ -10,5 +10,8 @@ db:
     # linkml model.
     table_name_template: tgt_{}
 data_model:
-    schema: ../src/acr_harmonized_data_model/schema/acr_harmonized_data_model.yaml
-    alchemy_classes: acr.py
+    model_source: anvilproject/acr-harmonized-data-model
+    model_filename: acr_harmonized_data_model.py
+    source_ref: main # This can be commit hash, version or branch
+projection:
+    templates: example/

@@ -1,0 +1,32 @@
+{
+  "resourceType": "Patient",
+  "id": "{{subject.id}}",
+  "meta": {
+    "profile": [
+      "https://nih-ncpi.github.io/ncpi-fhir-ig-2/StructureDefinition/ncpi-participant"
+    ]
+  },
+  "extension": [
+    {
+        "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex",
+        "valueCode": "{{"F" if subject.has_demographics.sex else "M"}}"
+    },
+    {
+        "extension": [
+            {
+                "url": "ombCategory",
+                "valueCoding": {
+                    "system": "urn:oid:2.16.840.1.113883.6.238",
+                    "code": "{{"210603" if subject.has_demographics.race[0] == "white" else "TBD"}}",
+                    "display": "{{subject.has_demographics.race[0]}}"
+                },
+            },
+            {
+                "url": "text",
+                "valueString": "{{subject.has_demographics.race[0]}}"
+            }
+        ],
+        "url": "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race"
+    }
+    ]
+}
