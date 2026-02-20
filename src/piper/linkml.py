@@ -1,17 +1,78 @@
 import builtins
+import hashlib
 import importlib.util
+import logging
+import os
 import sys
 from pathlib import Path
 
+import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+
+def get_local_git_sha(file_path):
+    """Calculates the Git-style SHA1 hash of a local file."""
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "rb") as f:
+        data = f.read()
+    # GitHub's blob SHA is sha1("blob " + length + "\0" + content)
+    header = f"blob {len(data)}\0".encode("utf-8")
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def sync_github_file(owner, repo, path, ref="main", save_as=None):
+    """
+    Downloads a file from GitHub only if it's missing or out of date.
+    'ref' can be a branch name, tag, or specific commit SHA.
+    """
+    save_as = save_as or os.path.basename(path)
+    api_url = f"https://api.github.com{owner}/{repo}/contents/{path}?ref={ref}"
+
+    # 1. Fetch metadata from GitHub API
+    response = requests.get(api_url)
+    if response.status_code != 200:
+        logging.error(f"Error fetching metadata: {response.json().get('message')}")
+        return
+
+    file_metadata = response.json()
+    remote_sha = file_metadata["sha"]
+    download_url = file_metadata["download_url"]
+
+    # 2. Compare local SHA with remote SHA
+    local_sha = get_local_git_sha(save_as)
+
+    if local_sha == remote_sha:
+        logging.info(f"File '{save_as}' is already up to date (SHA: {remote_sha[:7]}).")
+        return
+
+    # 3. Download if different or missing
+    logging.warn(f"Update required. Downloading '{path}' from {ref}...")
+    file_data = requests.get(download_url)
+    with open(save_as, "wb") as f:
+        f.write(file_data.content)
+    logging.warn("Download complete.")
+
+
+# --- Example Usage ---
+# Downloads 'README.md' from a specific tag only if it has changed
+# sync_github_file("psf", "requests", "README.md", ref="v2.31.0")
 
 
 class LinkMLModelLoader:
     """Helper class for loading and using LinkML-generated SQLAlchemy models with DBT tables."""
 
+    staging_dir = "staging"
+
     def __init__(
-        self, model_file_path, database_url, table_prefix="tgt_", schema_name=None
+        self,
+        model_source,
+        model_filename,
+        database_url,
+        table_prefix="tgt_",
+        schema_name=None,
+        source_ref="main",
     ):
         """
         Initialize the loader.
@@ -22,7 +83,25 @@ class LinkMLModelLoader:
             table_prefix: DBT table prefix (default: 'tgt_')
             schema_name: Database schema (default: None)
         """
-        self.model_file_path = Path(model_file_path)
+        self.github_repository = None
+        if model_source is None:
+            self.model_file_path = model_source
+            assert Path(model_filename).exists(), (
+                f"File not found: '{model_filename}' does not exist."
+            )
+        else:
+            self.github_repository = model_source
+            self.model_file_path = Path(LinkMLModelLoader.staging_dir) / model_filename
+
+            gh_owner, gh_repo = model_source.split("/")
+            sync_github_file(
+                gh_owner,
+                gh_repo,
+                f"project/sqlalchemy/{model_filename}",
+                ref=source_ref,
+                save_as=self.model_file_path,
+            )
+
         self.database_url = database_url
         self.table_prefix = table_prefix
         self.schema_name = schema_name
