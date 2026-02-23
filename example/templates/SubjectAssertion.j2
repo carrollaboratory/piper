@@ -1,0 +1,18 @@
+{
+  "resourceType": "Observation",
+  "id": "{{subjectassertion.id}}",
+  "subject": "Patient/{{subject.id}}",
+  "status": "final",
+  "category": "{{subjectassertion.category}}",
+  "code": "TBD - Presumably this will be a macro",
+  {{ macro for the value[x] }},
+  "component": [
+    # I assume this will be a partial template of some kind
+    {"component[0]": "TBD -- "}
+  ]
+  "meta": {
+    "profile": [
+      "https://nih-ncpi.github.io/ncpi-fhir-ig-2/StructureDefinition/ncpi-participant-assertion"
+    ]
+  }
+}

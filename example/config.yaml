@@ -13,5 +13,15 @@ data_model:
     model_source: anvilproject/acr-harmonized-data-model
     model_filename: acr_harmonized_data_model.py
     source_ref: main # This can be commit hash, version or branch
+    # There is a pattern that we will be expecting that must remain true for
+    # all supported models. The actual class names are unimportant, but they
+    # must be provided as entrypoints into the data itself.
+    key_classes:
+        # This is the research study. Presumably, it will tie everything
+        # together. I'm not sure how INCLUDE datasets will fit into this, but
+        # I expect they would end up as simple members of the study.
+        study: Study
+        # This is the subject/participant.
+        subject: Subject
 projection:
     templates: example/
