@@ -53,8 +53,8 @@ class TypingBase(DeclarativeBase):
 T = TypeVar("T", bound=TypingBase)
 
 
-class TemplateManager:
-    def __init__(self, model_keys: Dict, template_dir: Path):
+class TemplateProjector:
+    def __init__(self, model_helpers: Dict, template_dir: Path):
         """
         Manage the linking between the data model and it's projection.
 
@@ -62,7 +62,7 @@ class TemplateManager:
         specific classes. This necessary for basic traversal logic.
             * key_classes (study and subject class names)
         """
-        self.model_keys = model_keys
+        self.model_helpers = model_helpers
         self.template_dir = template_dir
         # Initialize Jinja environment
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
@@ -122,6 +122,15 @@ class TemplateManager:
         else:
             return template.render(**{varname: obj, study_varname: study})
 
+    def black_list(self, model_component: str):
+        """Return the list of fields that a particular model component should
+        ignore while traversing it's children (ie these will be expected to be
+        handled elsewhere."""
+        blacklist = set(self.model_helpers.keys())
+        if model_component in self.model_helpers:
+            blacklist.update(self.model_helpers[model_component]["blacklist"])
+        return blacklist
+
     def process_study(self, study: T, resources: DefaultDict[str, list[str]]):
         """
         Accept a single study instance for all non-participant level resources
@@ -135,6 +144,38 @@ class TemplateManager:
         study_varname = to_snake(study_classname)
         template = self.templates[study_classname]
         resources[study_varname].append(template.render(**{study_varname: study}))
+
+        # Unless we decide we want to fully recurse the tree and track our
+        # progress to prevent dupes, we can just handle "subjects" differently
+        # than the rest of the stuff found inside a study.
+        #
+        # TODO: What about study specific stuff that is also tagged by a
+        # subject, like the Access Control Record. That should be instantiated
+        # at the same level as the study members, but will need to be
+        # referenced by the subject's members.
+
+        # For now, we'll just grab the classes found inside the model_keys map
+
+        for varname, rel in inspect(study.__class__).relationships.items():
+            related_class = rel.mapper.class_
+            blacklist = self.black_list("study")
+
+            # We assume that any projections will exist and match our
+            # classnames
+            if related_class in self.templates:
+                # Skip special vars
+                if varname not in blacklist:
+                    if not rel.uselist:
+                        items = [getattr(study, varname)]
+                    else:
+                        items = getattr(study, varname)
+
+                        for item in items:
+                            resources[varname].append(
+                                template.render_object(
+                                    item, study=study, class_name=related_class
+                                )
+                            )
 
     def process_subject(
         self, subject: T, study: T, resources: DefaultDict[str, list[str]]

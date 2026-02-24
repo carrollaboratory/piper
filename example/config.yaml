@@ -16,12 +16,20 @@ data_model:
     # There is a pattern that we will be expecting that must remain true for
     # all supported models. The actual class names are unimportant, but they
     # must be provided as entrypoints into the data itself.
-    key_classes:
+    model_helpers:
         # This is the research study. Presumably, it will tie everything
         # together. I'm not sure how INCLUDE datasets will fit into this, but
         # I expect they would end up as simple members of the study.
-        study: Study
-        # This is the subject/participant.
-        subject: Subject
+        study:
+            classname: Study
+            # Which relationships are to be handled elsewhere. We should assume
+            # all entries in the model_helpers are handled specially, but I'll
+            # put this here as a placeholder.
+            blacklist:
+                - subject
+        subject:
+            classname: Subject
+            blacklist:
+                - study
 projection:
     templates: example/
