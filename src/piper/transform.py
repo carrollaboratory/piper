@@ -8,6 +8,7 @@ from pathlib import Path
 from yaml import safe_load
 
 from piper.datamodel import LinkMLModelLoader
+from piper.template_projector import TemplateProjector
 
 from . import setup_logging
 
@@ -61,18 +62,17 @@ def run():
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    logging.info(f"Piper Transform: {','.join([f.name for f in args.config])}")
+    logging.info(f"Piper Transform: '{','.join([f.name for f in args.config])}'")
 
     for cfg in args.config:
         config = safe_load(cfg)
-        print(config["db"])
         database_uri = config["db"][args.dbenv]["uri"]
         db_schema_name = config["db"][args.dbenv]["db_schema_name"]
         tbl_prefix = config["db"]["table_name_template"]
 
-        logging.info(f"Projection Configuration: {cfg}")
+        logging.info(f"Projection Configuration:\t'{cfg.name}'")
         model_config = config["data_model"]
-        logging.info(f"Loading model {model_config['model_source']}")
+        logging.info(f"Loading model:\t'{model_config['model_source']}'")
 
         datamodel = LinkMLModelLoader(
             model_source=model_config["model_source"],
@@ -81,7 +81,23 @@ def run():
             table_prefix=tbl_prefix,
             schema_name=db_schema_name,
             source_ref=model_config["source_ref"],
+        ).load()
+        session = datamodel.create_session()
+
+        projection_template_dir = config["projection"]["templates"]
+        model_helpers = config["data_model"]["model_helpers"]
+
+        projector = TemplateProjector(
+            model_helpers=model_helpers, template_dir=projection_template_dir
         )
+
+        study_model = datamodel.get_model(model_helpers["study"]["classname"])
+        studies = session.query(study_model).all()
+        logging.info(f"{len(studies)} studies found")
+
+        subject_model = datamodel.get_model(model_helpers["subject"]["classname"])
+        subjects = session.query(subject_model).all()
+        logging.info(f"{len(subjects)} subjects found")
 
     logging.warn("This is a warning")
     logging.info(f"Hello world\n{args}! TBD")
