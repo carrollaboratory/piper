@@ -36,13 +36,14 @@ conventions. The script is agnostic to all model design details except:
 These are the two key requirements as of Feb 2026.
 """
 
+import logging
 from pathlib import Path
 from typing import DefaultDict, Dict, TypeVar
 
 from camel_converter import to_snake
 from jinja2 import Environment, FileSystemLoader, Template
+from sqlalchemy import inspect
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchmey import inspect
 
 
 class TypingBase(DeclarativeBase):
@@ -63,7 +64,7 @@ class TemplateProjector:
             * key_classes (study and subject class names)
         """
         self.model_helpers = model_helpers
-        self.template_dir = template_dir
+        self.template_dir = Path(template_dir)
         # Initialize Jinja environment
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
         self.templates = {}
@@ -82,7 +83,7 @@ class TemplateProjector:
             try:
                 self.templates[filename.stem] = self.env.get_template(filename)
             except Exception as e:
-                print(f"Error loading template {filename}: {e}")
+                logging.error(f"Error loading template {filename}: {e}")
 
     def render_object(
         self,
