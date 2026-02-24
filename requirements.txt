@@ -1,0 +1,4 @@
+linkml==1.9.6
+PyYAML==6.0.3
+duckdb==1.4.4
+psycopg[binary]==3.3.2
