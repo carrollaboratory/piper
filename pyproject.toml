@@ -28,7 +28,10 @@ dependencies = [
   "linkml>=1.9.1",
   "PyYAML",
   "duckdb",
-  "psycopg[binary]"
+  "duckdb-engine",
+  "psycopg[binary]",
+  "camel_converter",
+  "sqlalchemy",
 ]
 
 [project.optional-dependencies]
