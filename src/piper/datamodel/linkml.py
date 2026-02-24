@@ -1,9 +1,6 @@
-import builtins
 import hashlib
 import importlib.util
 import logging
-import logging.config
-import os
 import sys
 from pathlib import Path
 
@@ -36,9 +33,6 @@ def sync_github_file(
     'ref' can be a branch name, tag, or specific commit SHA.
     """
     save_as = local_filepath if local_filepath else Path(path).stem
-    import pdb
-
-    pdb.set_trace()
     api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={ref}"
 
     # 1. Fetch metadata from GitHub API
@@ -139,68 +133,31 @@ class LinkMLModelLoader:
 
     def _load_and_patch_module(self):
         """Load the module and patch table names."""
-        # Load module from file WITHOUT executing it yet
+        # Load module from file
         module_name = self.model_file_path.stem
         spec = importlib.util.spec_from_file_location(module_name, self.model_file_path)
         module = importlib.util.module_from_spec(spec)
 
-        # Add to sys.modules BEFORE executing
+        # Add to sys.modules and execute
         sys.modules[module_name] = module
+        spec.loader.exec_module(module)
 
-        # Set up import hook to catch ANY imports during module execution
-        old_import = builtins.__import__
-        patched_modules = set()
+        # Patch the module's tables
+        if hasattr(module, "Base") and hasattr(module.Base, "metadata"):
+            logging.info(f"Patching module: '{module_name}'")
 
-        def patching_import(name, *args, **kwargs):
-            imported_module = old_import(name, *args, **kwargs)
+            if self.schema_name:
+                module.Base.metadata.schema = self.schema_name
 
-            # Check if this module has SQLAlchemy Base and hasn't been patched yet
-            if (
-                hasattr(imported_module, "Base")
-                and hasattr(imported_module.Base, "metadata")
-                and id(imported_module) not in patched_modules
-            ):
-                print(f"Patching module: {name}")
-
+            for table in list(module.Base.metadata.tables.values()):
+                original_name = table.name
+                new_name = self.table_prefix.format(original_name.lower())
+                logging.info(f"  Patching table: '{original_name}' -> '{new_name}'")
+                table.name = new_name
                 if self.schema_name:
-                    imported_module.Base.metadata.schema = self.schema_name
-
-                for table in list(imported_module.Base.metadata.tables.values()):
-                    original_name = table.name
-                    new_name = f"{self.table_prefix}{original_name.lower()}"
-                    print(f"  Patching table: {original_name} -> {new_name}")
-                    table.name = new_name
-                    if self.schema_name:
-                        table.schema = self.schema_name
-
-                patched_modules.add(id(imported_module))
-
-            return imported_module
-
-        # Replace import temporarily
-        builtins.__import__ = patching_import
-
-        try:
-            # NOW execute the module - this triggers all imports
-            spec.loader.exec_module(module)
-
-            # Also patch the main module itself if it has Base
-            if hasattr(module, "Base") and hasattr(module.Base, "metadata"):
-                print(f"Patching main module: {module_name}")
-
-                if self.schema_name:
-                    module.Base.metadata.schema = self.schema_name
-
-                for table in list(module.Base.metadata.tables.values()):
-                    original_name = table.name
-                    new_name = f"{self.table_prefix}{original_name.lower()}"
-                    print(f"  Patching table: {original_name} -> {new_name}")
-                    table.name = new_name
-                    if self.schema_name:
-                        table.schema = self.schema_name
-        finally:
-            # Restore original import
-            builtins.__import__ = old_import
+                    table.schema = self.schema_name
+        else:
+            logging.warning(f"Module '{module_name}' does not have Base.metadata")
 
         return module
 
