@@ -1,14 +1,14 @@
 {
   "resourceType": "Observation",
-  "id": "{{subjectassertion.id}}",
+  "id": "{{subject_assertion.id}}",
   "subject": "Patient/{{subject.id}}",
   "status": "final",
-  "category": "{{subjectassertion.category}}",
+  "category": "{{subject_assertion.category}}",
   "code": "TBD - Presumably this will be a macro",
-  {{ macro for the value[x] }},
+  {# {{ macro for the value[x] }}, #}
   "component": [
-    # I assume this will be a partial template of some kind
-    {"component[0]": "TBD -- "}
+    {# I assume this will be a partial template of some kind #}
+    "component[0]": "TBD -- "
   ]
   "meta": {
     "profile": [

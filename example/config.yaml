@@ -32,4 +32,4 @@ data_model:
             blacklist:
                 - study
 projection:
-    templates: example/
+    templates: example/templates
