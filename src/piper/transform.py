@@ -3,6 +3,7 @@
 import logging
 import sys
 from argparse import ArgumentParser, FileType
+from collections import defaultdict
 from pathlib import Path
 
 from yaml import safe_load
@@ -90,14 +91,43 @@ def run():
         projector = TemplateProjector(
             model_helpers=model_helpers, template_dir=projection_template_dir
         )
+        projections = defaultdict(list)
 
+        # Studies
         study_model = datamodel.get_model(model_helpers["study"]["classname"])
         studies = session.query(study_model).all()
         logging.info(f"{len(studies)} studies found")
 
-        subject_model = datamodel.get_model(model_helpers["subject"]["classname"])
-        subjects = session.query(subject_model).all()
-        logging.info(f"{len(subjects)} subjects found")
+        for study in studies:
+            if study:
+                local_projections = defaultdict(list)
+                logging.info(f"{study.id}")
+                projector.process_study(study, resources=local_projections)
+                for key, value in local_projections.items():
+                    logging.info(f"{key}: {len(value)} resources")
+                projections.update(local_projections)
+
+        # Subjects
+        local_projections = defaultdict(list)
+        # for subject in subjects:
+        for subject in datamodel.stream(model_helpers["subject"]["classname"]):
+            # TODO: if we have more than one study, how are we handling
+            # participants? Are they found inside the study or do they point
+            # to their primary study? Is there a mechanism we need to use to
+            # single out the primary study resource?
+            projector.process_subject(
+                subject, study=studies[0], resources=local_projections
+            )
+        logging.info("Participant resources created: ")
+        for key, value in local_projections.items():
+            logging.info(f"{key}: {len(value)} resources")
+        projections.update(local_projections)
+
+        logging.info("Total resources created: ")
+        for key, value in projections.items():
+            logging.info(f"{key}: {len(value)} resources")
+
+        # with Path("output/data_resources.json").open('rt') as f:
 
     logging.warn("This is a warning")
     logging.info(f"Hello world\n{args}! TBD")
