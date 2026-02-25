@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import requests
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 
@@ -172,3 +172,17 @@ class LinkMLModelLoader:
         if not self.Session:
             raise RuntimeError("Models not loaded. Call load() first.")
         return self.Session()
+
+    def stream(self, class_name, chunksize=1000):
+        model = self.get_model(class_name)
+
+        with self.create_session() as session:
+            try:
+                stmt = select(model).execution_options(stream_results=True)
+                result = session.execute(stmt).yield_per(chunksize)
+
+                for partition in result.partitions():
+                    for row in partition:
+                        yield row[0]
+            except Exception as e:
+                logging.error(f"Error streaming {class_name.__name__}: {e}.")
