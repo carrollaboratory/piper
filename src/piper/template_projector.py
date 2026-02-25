@@ -66,10 +66,12 @@ class TemplateProjector:
         self.model_helpers = model_helpers
         self.template_dir = Path(template_dir)
         # Initialize Jinja environment
+        logging.info(f"Projection Directory: '{template_dir}")
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
         self.templates = {}
 
         self._load_class_templates()
+        logging.info(f"{len(self.templates)} template files found.")
 
     def _load_class_templates(self):
         """
@@ -81,7 +83,7 @@ class TemplateProjector:
 
         for filename in self.template_dir.glob("[A-Z]*.j2"):
             try:
-                self.templates[filename.stem] = self.env.get_template(filename)
+                self.templates[filename.stem] = self.env.get_template(filename.name)
             except Exception as e:
                 logging.error(f"Error loading template {filename}: {e}")
 
@@ -100,7 +102,8 @@ class TemplateProjector:
             class_name = obj.__class__.__name__
 
         if class_name not in self.templates:
-            raise ValueError(f"No template found for class: {class_name}")
+            print(self.templates)
+            raise ValueError(f"No template found for class: '{class_name}';")
 
         template = self.templates[class_name]
 
@@ -117,10 +120,16 @@ class TemplateProjector:
             # is provided
             subject_varname = to_snake(study_subject.__class__.__name__)
 
+            logging.info(f"varname: {obj}")
+            logging.info(f"study_varname: {study}")
+            logging.info(f"study_subject: {study_subject}")
             return template.render(
                 **{varname: obj, study_varname: study, subject_varname: study_subject}
             )
         else:
+            logging.info(f"varname: {obj}")
+            logging.info(f"study_varname: {study}")
+
             return template.render(**{varname: obj, study_varname: study})
 
     def black_list(self, model_component: str):
@@ -196,21 +205,27 @@ class TemplateProjector:
         for varname, rel in inspect(subject.__class__).relationships.items():
             related_class = rel.mapper.class_
             # If this doesn't match any of our templates, we don't really have any interest in it
-            if related_class in self.templates:
+            if related_class.__name__ in self.templates:
                 # I'm not sure we need to differentiate these: [ONETOMANY, MANYTOMANY, MANYTOONE]
                 # direction = rel.direction.name
-
                 # The variable is a list
                 if rel.uselist:
                     for item in getattr(subject, varname):
-                        resources[to_snake(related_class)].append(
+                        resources[to_snake(related_class.__name__)].append(
                             self.render_object(
-                                subject, study=study, class_name=related_class
+                                item,
+                                study_subject=subject,
+                                study=study,
+                                class_name=related_class.__name__,
                             )
                         )
                 else:
-                    resources[to_snake(related_class)].append(
+                    item = getattr(subject, varname)
+                    resources[to_snake(related_class.__name__)].append(
                         self.render_object(
-                            subject, study=study, class_name=related_class
+                            item,
+                            study_subject=subject,
+                            study=study,
+                            class_name=related_class.__name__,
                         )
                     )
