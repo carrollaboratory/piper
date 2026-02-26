@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import os
 from argparse import ArgumentParser, FileType
 from collections import defaultdict
 from pathlib import Path
@@ -21,8 +22,41 @@ try:
 except:
     pass
 
-
+def build_host_config():
+    """If we aren't using ~/.fhir_hosts file, then we can just use the same
+    values but pull them from the environment. We'll build out a simple object
+    that will look exactly the same. """
+    auth_type = os.getenv("AUTH_TYPE", None)
+    if auth_type is None:
+        logging.warn("No FHIR Host auth type. Assuming local HAPI with no auth")
+        return {
+            "auth_type": "auth_basic",
+            "target_service": "FHIR_HOST", "http://localhost:8080:fhir",
+            "username": "test",
+            "password": "nopass"
+        }
+    elif auth_type == "auth_basic":
+        return {
+            "auth_type": "auth_basic",
+            "target_service": os.getenv("FHIR_HOST", "http://localhost:8080:fhir"),
+            "username": os.getenv("FHIR_USER", "test"),
+            "password": os.getenv("FHIR_PWD", "nopass")
+        }
+    # For now, we'll assume a KF openid based auth
+    assert(os.getenv("FHIR_CLIENT_ID"))
+    assert(os.getenv("FHIR_SECRET"))
+    return {
+        "auth_type": os.getenv("AUTH_TYPE", "auth_kf_openid"),
+        "target_service_url": os.getenv("TARGET_SERVICE_URL", "http://localhost:8080/fhir"),
+        "client_id": os.getenv("FHIR_CLIENT_ID"),
+        "password": os.getenv("FHIR_SECRET")
+    }
 def run():
+    hosts_file = Path("~/.fhir_hosts").expanduser()
+    host_config = None
+    if hosts_file.exists():
+        host_config = safe_load(hosts_file)
+
     parser = ArgumentParser(
         description="Transform data from RDB into FHIR resources for one or more studies"
     )
@@ -40,6 +74,13 @@ def run():
         type=str,
         help="Directory where output files are written.",
     )
+    if host_config:
+        parser.add_argument(
+            "--host",
+            choices=host_config.keys(),
+            default=None,
+            help="Optional host configuration if '~/.fhir_hosts' exists",
+        )
     parser.add_argument(
         "-e",
         "--dbenv",
@@ -55,6 +96,17 @@ def run():
         help="Log level",
     )
     parser.add_argument(
+        "--validate",
+        action='store_true',
+        help="Validate FHIR resources as they are produced"
+    )
+    parser.add_argument(
+        "--max-validation-count",
+        type=int,
+        default=0,
+        help="When greater than 0, only validate that many of any given resource type"
+    )
+    parser.add_argument(
         "config",
         type=FileType("rt"),
         nargs="+",
@@ -64,6 +116,12 @@ def run():
     setup_logging(args.log_level)
 
     logging.info(f"Piper Transform: '{','.join([f.name for f in args.config])}'")
+
+    if "host"in args and args.host is not None:
+        hostcfg = host_config['args.host']
+    else:
+        # Extract relevant stuff from the environment
+        hostcfg = build_host_config()
 
     for cfg in args.config:
         config = safe_load(cfg)
