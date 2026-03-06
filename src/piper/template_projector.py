@@ -36,14 +36,21 @@ conventions. The script is agnostic to all model design details except:
 These are the two key requirements as of Feb 2026.
 """
 
+import json
 import logging
+import sys
 from pathlib import Path
-from typing import DefaultDict, Dict, TypeVar
+from typing import Callable, DefaultDict, Dict, List, TypeVar
 
 from camel_converter import to_snake
-from jinja2 import Environment, FileSystemLoader, Template
+from jinja2 import Environment, FileSystemLoader, Template, TemplateSyntaxError
+from pydantic import ValidationError
 from sqlalchemy import inspect
 from sqlalchemy.orm import DeclarativeBase
+
+from . import debug_print
+from .exceptions import ProjectionError
+from .harmony import Harmony
 
 
 class TypingBase(DeclarativeBase):
@@ -55,7 +62,15 @@ T = TypeVar("T", bound=TypingBase)
 
 
 class TemplateProjector:
-    def __init__(self, model_helpers: Dict, template_dir: Path):
+    curie_map = {}
+
+    def __init__(
+        self,
+        model_helpers: Dict,
+        template_dir: Path,
+        resource_consumers: List[Callable],
+        harmony_file: Path | None = None,
+    ):
         """
         Manage the linking between the data model and it's projection.
 
@@ -68,7 +83,14 @@ class TemplateProjector:
         # Initialize Jinja environment
         logging.info(f"Projection Directory: '{template_dir}")
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
+
+        if harmony_file and harmony_file.exists():
+            self.harmony = Harmony(str(harmony_file))
+
+        self.env.globals["HARMONIZE"] = self.harmony
+        self.env.globals["SYSTEMS"] = TemplateProjector.curie_map
         self.templates = {}
+        self.resource_consumers = resource_consumers
 
         self._load_class_templates()
         logging.info(f"{len(self.templates)} template files found.")
@@ -84,7 +106,17 @@ class TemplateProjector:
         for filename in self.template_dir.glob("[A-Z]*.j2"):
             try:
                 self.templates[filename.stem] = self.env.get_template(filename.name)
-            except Exception as e:
+            except TemplateSyntaxError as e:
+                if e.source:
+                    debug_print(e.filename, e.source, error_line=e.lineno)
+
+                logging.error(
+                    f"Malformed template file, '{e.filename}' at line {e.lineno}:"
+                )
+                logging.error(f" - {e.message})")
+                import pdb
+
+                pdb.set_trace()
                 logging.error(f"Error loading template {filename}: {e}")
 
     def render_object(
@@ -102,7 +134,8 @@ class TemplateProjector:
             class_name = obj.__class__.__name__
 
         if class_name not in self.templates:
-            print(self.templates)
+            logging.debug(self.templates)
+
             raise ValueError(f"No template found for class: '{class_name}';")
 
         template = self.templates[class_name]
@@ -120,16 +153,10 @@ class TemplateProjector:
             # is provided
             subject_varname = to_snake(study_subject.__class__.__name__)
 
-            logging.info(f"varname: {obj}")
-            logging.info(f"study_varname: {study}")
-            logging.info(f"study_subject: {study_subject}")
             return template.render(
                 **{varname: obj, study_varname: study, subject_varname: study_subject}
             )
         else:
-            logging.info(f"varname: {obj}")
-            logging.info(f"study_varname: {study}")
-
             return template.render(**{varname: obj, study_varname: study})
 
     def black_list(self, model_component: str):
@@ -141,7 +168,29 @@ class TemplateProjector:
             blacklist.update(self.model_helpers[model_component]["blacklist"])
         return blacklist
 
-    def process_study(self, study: T, resources: DefaultDict[str, list[str]]):
+    def consume(self, resource, template_name="Unknown"):
+
+        try:
+            payload = json.loads(resource)
+        except json.JSONDecodeError as e:
+            err = ProjectionError(
+                decode_err=e, body=resource, template_name=template_name
+            )
+            debug_print(template_name, resource=resource, error_line=err.lnum)
+            sys.exit(1)
+
+        resource_type = payload.get("resourceType")
+        if not resource_type:
+            debug_print(template_name=template_name, resource=resource)
+            logging.error(
+                f"No resourceType found in projected resource of type: {template_name}"
+            )
+
+        # We'll provide the raw JSON to our consumers
+        for consumer in self.resource_consumers:
+            consumer(template_name, resource, payload)
+
+    def process_study(self, study: T):
         """
         Accept a single study instance for all non-participant level resources
 
@@ -153,7 +202,10 @@ class TemplateProjector:
         study_classname = study.__class__.__name__
         study_varname = to_snake(study_classname)
         template = self.templates[study_classname]
-        resources[study_varname].append(template.render(**{study_varname: study}))
+
+        self.consume(
+            template.render(**{study_varname: study}), template_name=study_classname
+        )
 
         # Unless we decide we want to fully recurse the tree and track our
         # progress to prevent dupes, we can just handle "subjects" differently
@@ -181,15 +233,13 @@ class TemplateProjector:
                         items = getattr(study, varname)
 
                         for item in items:
-                            resources[varname].append(
+                            self.consume(
                                 template.render_object(
                                     item, study=study, class_name=related_class
                                 )
                             )
 
-    def process_subject(
-        self, subject: T, study: T, resources: DefaultDict[str, list[str]]
-    ):
+    def process_subject(self, subject: T, study: T):
         """
         Accept a single subject instance and generate all of the related FHIR
         resources associated with that particular subject.
@@ -199,7 +249,9 @@ class TemplateProjector:
         approach. I can't think of a situation like that OTOH.
         """
         subject_varname = to_snake(subject.__class__.__name__)
-        resources[subject_varname].append(self.render_object(subject, study=study))
+        self.consume(
+            self.render_object(subject, study=study), template_name=subject_varname
+        )
         # Iterate on all classes that are a part of the subject:
 
         for varname, rel in inspect(subject.__class__).relationships.items():
@@ -211,17 +263,18 @@ class TemplateProjector:
                 # The variable is a list
                 if rel.uselist:
                     for item in getattr(subject, varname):
-                        resources[to_snake(related_class.__name__)].append(
-                            self.render_object(
+                        self.consume(
+                            resource=self.render_object(
                                 item,
                                 study_subject=subject,
                                 study=study,
                                 class_name=related_class.__name__,
-                            )
+                            ),
+                            template_name=related_class.__name__,
                         )
                 else:
                     item = getattr(subject, varname)
-                    resources[to_snake(related_class.__name__)].append(
+                    self.consume(
                         self.render_object(
                             item,
                             study_subject=subject,

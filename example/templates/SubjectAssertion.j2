@@ -1,15 +1,28 @@
+{%- import "macros/codeable_concept.j2" as fhir with context -%}
 {
   "resourceType": "Observation",
   "id": "{{subject_assertion.id}}",
-  "subject": "Patient/{{subject.id}}",
+  "subject": {
+    "reference": "Patient/{{subject.id}}"
+  },
   "status": "final",
   "category": "{{subject_assertion.category}}",
-  "code": "TBD - Presumably this will be a macro",
-  {# {{ macro for the value[x] }}, #}
-  "component": [
-    {# I assume this will be a partial template of some kind #}
+  "code": {{ fhir.codeableconcept(subject_assertion.display,
+    (
+                subject_assertion.code,
+                subject_assertion.display
+    )
+  )}},
+  "valueCodeableConcept": {{ fhir.codeableconcept(subject_assertion.value_display,
+    (
+    subject_assertion.value_code,
+    subject_assertion.value_display,
+    "https://loinc.org/"
+    )
+  )}},
+  {#- "component": [
     "component[0]": "TBD -- "
-  ]
+  ]-#}
   "meta": {
     "profile": [
       "https://nih-ncpi.github.io/ncpi-fhir-ig-2/StructureDefinition/ncpi-participant-assertion"

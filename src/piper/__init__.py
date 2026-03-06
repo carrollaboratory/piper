@@ -10,7 +10,9 @@ try:
 
     IS_RICH = True
 except ImportError:
-    IS_RICH = True
+    IS_RICH = False
+
+from typing import Callable, DefaultDict, Dict, List, TypeVar
 
 
 def is_interactive():
@@ -69,3 +71,27 @@ def setup_logging(level="INFO", log_file="output/log.txt"):
         config["handlers"]["console"]["formatter"] = "detailed"
 
     logging.config.dictConfig(config)
+
+
+def debug_print(
+    template_name: str, resource: str, error_line: int = 0, errorfields: List[str] = []
+):
+    if template_name == "Unknown":
+        import pdb
+
+        pdb.set_trace()
+    lines = resource.split("\n")
+    padding = len(str(len(lines)))
+    logging.info(f"\n--------- {template_name} ------")
+    for i, line in enumerate(lines, start=1):
+        # Format: "  1 | {line_content}"
+        msg = f"{i:>{padding}} | {line}"
+        if i == error_line or (
+            errorfields != [] and any(f'"{field}"' in line for field in errorfields)
+        ):
+            logging.error(f"[bold red]{msg}[/bold red]")
+        elif error_line > 0 and i > error_line - 3 and i < error_line + 3:
+            logging.info(msg)
+        else:
+            logging.debug(msg)
+    logging.info(f"--------- {template_name} ------\n")

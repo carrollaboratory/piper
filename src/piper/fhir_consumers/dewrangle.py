@@ -4,6 +4,9 @@ projected. These will all support the same function and will be passed to the
 streamer to allow flexible selections.
 """
 
+import json
+from pathlib import Path
+
 
 # Write to a JSON file suitable for dewrangle
 #
@@ -33,17 +36,21 @@ class DewrangleJSON:
         start_with_comma = True
         if self.file is None:
             start_with_comma = False
+            file_path = Path(self.filename)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
             self.file = open(self.filename, "wt")
             self.file.write("[\n")
         if len(self.resources) > 0:
             if start_with_comma:
                 self.file.write(",\n")
-            self.file.write(",\n".join(self.resources))
+            self.file.write(
+                ",\n".join([json.dumps(rsc, indent=2) for rsc in self.resources])
+            )
         self.resources = []
 
-    def __call__(self, resource):
+    def __call__(self, template_name, resource, payload):
         """Feed in the resources one at a time from our iteration"""
-        self.resources.append(resource)
+        self.resources.append(payload)
 
         if len(self.resources) >= self.buffersize:
             self._dump_buffer_to_file()

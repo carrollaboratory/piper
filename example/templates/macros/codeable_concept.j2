@@ -1,0 +1,29 @@
+{#
+ # Basic FHIR Coding as an object
+ #}
+{% macro coding(code, display=None, system=None) -%}
+{
+  {%- set final_system=system -%}
+  {%- if not system and ":" in code -%}
+      {%- set parts=code.split(":", 1) -%}
+      {%- set final_system=SYSTEMS.get(parts[0], parts[0]) -%}
+  {%- endif -%}
+  "code": "{{ code }}",
+  "system": "{{ final_system }}"{% if display %},
+  "display": "{{ disokay }}"{% endif %}
+}
+{%- endmacro %}
+
+{#
+ # CodeableConcept with the optional text value
+ #}
+{% macro codeableconcept(text=None) -%}
+{
+  "coding": [
+    {%- for coding_args in varargs %}
+      {{ coding(*coding_args) }}{{ "," if not loop.last }}
+    {%- endfor %}
+  ]
+  {%- if text %}, "text": "{{ text }}"{% endif %}
+}
+{%- endmacro %}
