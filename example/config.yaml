@@ -10,9 +10,25 @@ db:
   # linkml model.
   table_name_template: tgt_{}
 data_model:
-  model_source: anvilproject/acr-harmonized-data-model
-  model_filename: acr_harmonized_data_model.py
-  source_ref: main # This can be commit hash, version or branch
+  # How does the application find the model? Has it already been added as a
+  # dependency, or do we need to pull it from a file (possibly inside a GH
+  # Repo). These options are mutially exclusive.
+  #
+  # Template repo has model defined as dependency, so we can just specify
+  # how to import the model
+  import_path: acr_harmonized_data_model.acr_harmonized_data_model
+
+  # Template Repo has the model baked in as part of the repository. We
+  # specify the path to the python file containing model files
+  #as_file:
+  #  model_filename: staging/acr_harmonized_data_model.py
+  #
+  # Template repo expects the application to pull the model down from a gh
+  # repository based on branch, version tag, etc.
+  #as_file:
+  #  model_source: anvilproject/acr-harmonized-data-model
+  #  model_filename: acr_harmonized_data_model.py
+  #  source_ref: main # This can be commit hash, version or branch
   # There is a pattern that we will be expecting that must remain true for
   # all supported models. The actual class names are unimportant, but they
   # must be provided as entrypoints into the data itself.
