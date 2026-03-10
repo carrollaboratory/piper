@@ -10,6 +10,8 @@ from typing import Dict
 
 from ncpi_fhir_client.fhir_client import FhirClient
 
+from .utils import scrub_empty
+
 
 def format_operation_outcome(oo_dict):
     """
@@ -52,7 +54,7 @@ def format_operation_outcome(oo_dict):
 
 # Write to a JSON file suitable for dewrangle
 #
-class ValidateFHIR:
+class ValidateAgainstIG:
     """Submit the resources to a FHIR server for validation.
 
     If max_validation_count is greater than 0, it will only validate that many
@@ -78,15 +80,17 @@ class ValidateFHIR:
         """Feed in the resources one at a time from our iteration"""
         resource_type = payload["resourceType"]
 
+        dropped_keys = []
+        cleaned_payload = scrub_empty(payload, dropped_keys=dropped_keys)
         if (
             self.max_validation_count < 1
             or self.observed_resource_types[resource_type] < self.max_validation_count
         ):
-            response = self.fhir_client.load(resource_type, payload, True)
+            response = self.fhir_client.load(resource_type, cleaned_payload, True)
             if response["status_code"] < 300:
                 self.observed_resource_types[resource_type] += 1
             else:
-                logging.info(json.dumps(payload, indent=2))
+                logging.info(json.dumps(cleaned_payload, indent=2))
                 logging.info(response["request_url"])
                 logging.error(response["status_code"])
                 print(response.keys())

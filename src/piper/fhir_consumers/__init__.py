@@ -1,4 +1,4 @@
 from .dewrangle import DewrangleJSON
-from .fhir_validation import ValidateFHIR
 from .hl7_validation import ValidateResourceBasic
+from .ig_validation import ValidateAgainstIG
 from .summary import ResourceSummary

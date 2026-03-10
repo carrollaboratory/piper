@@ -8,38 +8,7 @@ from pydantic import ValidationError
 
 from .. import debug_print
 from ..exceptions import ProjectionError
-
-
-def scrub_empty(obj, parent_value="", dropped_keys=None):
-    """Recursively remove empty strings and empty containers."""
-
-    def property_name(key):
-        return key if parent_value == "" else f"{parent_value}.{key}"
-
-    if dropped_keys is None:
-        dropped_keys = []
-
-    if isinstance(obj, dict):
-        cleaned = {}
-        for k, v in obj.items():
-            if v == "":
-                dropped_keys.append(property_name(k))
-                continue
-            res = scrub_empty(
-                v, parent_value=property_name(k), dropped_keys=dropped_keys
-            )
-            if res is not None:
-                cleaned[k] = res
-        return cleaned if cleaned else None
-    elif isinstance(obj, list):
-        cleaned = [
-            scrub_empty(item, parent_value=parent_value, dropped_keys=dropped_keys)
-            for item in obj
-        ]
-        # Filter out None results from the list
-        cleaned = [i for i in cleaned if i is not None]
-        return cleaned if cleaned else None
-    return obj
+from .utils import scrub_empty
 
 
 class ValidateResourceBasic:
@@ -67,11 +36,15 @@ class ValidateResourceBasic:
         try:
             fhir_class = get_fhir_model_class(resource_type)
             dropped_keys = []
+
             cleaned_payload = scrub_empty(payload, dropped_keys=dropped_keys)
+
+            # print(cleaned_payload)
             fhir_data = fhir_class(**cleaned_payload)
         except ValidationError as e:
             # import pdb
 
+            # pdb.set_trace()
             if len(dropped_keys) > 0:
                 logging.warning(
                     f"""The properties keys had been assigned '' and were dropped before validation: \n\t\t'{"'\n\t\t'".join(dropped_keys)}'"""
