@@ -253,7 +253,6 @@ class TemplateProjector:
             self.render_object(subject, study=study), template_name=subject_varname
         )
         # Iterate on all classes that are a part of the subject:
-
         for varname, rel in inspect(subject.__class__).relationships.items():
             related_class = rel.mapper.class_
             # If this doesn't match any of our templates, we don't really have any interest in it

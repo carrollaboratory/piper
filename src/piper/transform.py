@@ -13,9 +13,10 @@ from piper.datamodel import LinkMLModelLoader
 from piper.fhir_consumers import (
     DewrangleJSON,
     ResourceSummary,
-    ValidateFHIR,
+    ValidateAgainstIG,
     ValidateResourceBasic,
 )
+from piper.fhir_consumers.utils import Progress
 from piper.template_projector import TemplateProjector
 
 from . import setup_logging
@@ -141,7 +142,7 @@ def run():
         DewrangleJSON(filename="output/fhir/dewrangle.json", buffersize=1000),
     ]
     if args.validate:
-        resource_consumers.append(ValidateFHIR(hostcfg))
+        resource_consumers.append(ValidateAgainstIG(hostcfg, args.max_validation_count))
 
     for cfg in args.config:
         config = safe_load(cfg)
@@ -151,15 +152,17 @@ def run():
 
         logging.info(f"Projection Configuration:\t'{cfg.name}'")
         model_config = config["data_model"]
-        logging.info(f"Loading model:\t'{model_config['model_source']}'")
+        if "as_file" in model_config:
+            logging.info(
+                f"Loading model:\t'{model_config['as_file']['model_filename']}'"
+            )
 
         datamodel = LinkMLModelLoader(
-            model_source=model_config["model_source"],
-            model_filename=model_config["model_filename"],
             database_url=database_uri,
+            model_as_file=model_config.get("as_file"),
+            model_import_path=model_config.get("import_path"),
             table_prefix=tbl_prefix,
             schema_name=db_schema_name,
-            source_ref=model_config["source_ref"],
         ).load()
         session = datamodel.create_session()
 
@@ -179,27 +182,36 @@ def run():
         studies = session.query(study_model).all()
         logging.info(f"{len(studies)} studies found")
 
-        for study in studies:
-            if study:
-                local_projections = defaultdict(list)
-                logging.info(f"{study.id}")
-                projector.process_study(study)
-                for key, value in local_projections.items():
-                    logging.info(f"{key}: {len(value)} resources")
-                projections.update(local_projections)
+        with Progress() as progress:
+            task = progress.add_task("Processing Studies ", total=len(studies))
 
+            for study in studies:
+                if study:
+                    local_projections = defaultdict(list)
+                    projector.process_study(study)
+                    projections.update(local_projections)
+                    progress.update(task, advance=1)
+
+        resource_summary.reset("Study Data")
         # Subjects
         local_projections = defaultdict(list)
-        # for subject in subjects:
-        for subject in datamodel.stream(model_helpers["subject"]["classname"]):
-            # TODO: if we have more than one study, how are we handling
-            # participants? Are they found inside the study or do they point
-            # to their primary study? Is there a mechanism we need to use to
-            # single out the primary study resource?
-            projector.process_subject(subject, study=studies[0])
 
-        resource_summary.reset()
+        # Get Subject count for progress bar
+        subject_model = datamodel.get_model(model_helpers["subject"]["classname"])
+        subject_count = session.query(subject_model).count()
+        with Progress() as progress:
+            task = progress.add_task("Processing Subjects ", total=subject_count)
+
+            # for subject in subjects:
+            for subject in datamodel.stream(model_helpers["subject"]["classname"]):
+                # TODO: if we have more than one study, how are we handling
+                # participants? Are they found inside the study or do they point
+                # to their primary study? Is there a mechanism we need to use to
+                # single out the primary study resource?
+                projector.process_subject(subject, study=studies[0])
+                progress.update(task, advance=1)
+
+        resource_summary.reset("Patient Data")
         # with Path("output/data_resources.json").open('rt') as f:
 
-    logging.warn("This is a warning")
-    logging.info(f"Hello world\n{args}! TBD")
+        resource_summary.report_totals("All Data")

@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import importlib.util
 import logging
 import sys
@@ -68,12 +69,11 @@ class LinkMLModelLoader:
 
     def __init__(
         self,
-        model_source,
-        model_filename,
         database_url,
+        model_import_path=None,
+        model_as_file=None,
         table_prefix="tgt_",
         schema_name=None,
-        source_ref="main",
     ):
         """
         Initialize the loader.
@@ -86,31 +86,43 @@ class LinkMLModelLoader:
         """
         self.github_repository = None
 
-        LinkMLModelLoader.staging_dir = Path(LinkMLModelLoader.staging_dir)
-        if not LinkMLModelLoader.staging_dir.exists():
-            logging.info(
-                f"Creating model directory, '{LinkMLModelLoader.staging_dir.absolute()}'"
-            )
-            LinkMLModelLoader.staging_dir.mkdir(exist_ok=True, parents=True)
+        self.model_file_path = None
+        self.github_repository
+        print(model_as_file)
+        if model_as_file:
+            if model_import_path is not None:
+                raise ValueError(
+                    f"When defining the data model, either the 'as_file' settings are used, or the 'import_path'"
+                )
+            LinkMLModelLoader.staging_dir = Path(LinkMLModelLoader.staging_dir)
+            if not LinkMLModelLoader.staging_dir.exists():
+                logging.info(
+                    f"Creating model directory, '{LinkMLModelLoader.staging_dir.absolute()}'"
+                )
+                LinkMLModelLoader.staging_dir.mkdir(exist_ok=True, parents=True)
 
-        if model_source is None:
-            self.model_file_path = model_source
-            assert Path(model_filename).exists(), (
-                f"File not found: '{model_filename}' does not exist."
-            )
-        else:
-            self.github_repository = model_source
-            self.model_file_path = Path(LinkMLModelLoader.staging_dir) / model_filename
+            model_source = model_as_file.get("model_source")
+            model_filename = model_as_file.get("model_filename")
+            if model_source is None:
+                self.model_file_path = model_filename
+                assert Path(model_filename).exists(), (
+                    f"File not found: '{model_filename}' does not exist."
+                )
+            else:
+                self.github_repository = model_source
+                self.model_file_path = (
+                    Path(LinkMLModelLoader.staging_dir) / model_filename
+                )
 
-            gh_owner, gh_repo = model_source.split("/")
-            sync_github_file(
-                gh_owner,
-                gh_repo,
-                f"project/sqlalchemy/{model_filename}",
-                ref=source_ref,
-                local_filepath=self.model_file_path,
-            )
-
+                gh_owner, gh_repo = model_source.split("/")
+                sync_github_file(
+                    gh_owner,
+                    gh_repo,
+                    f"project/sqlalchemy/{model_filename}",
+                    ref=model_as_file.get("source_ref"),
+                    local_filepath=self.model_file_path,
+                )
+        self.import_path = model_import_path
         self.database_url = database_url
         self.table_prefix = table_prefix
         self.schema_name = schema_name
@@ -134,13 +146,21 @@ class LinkMLModelLoader:
     def _load_and_patch_module(self):
         """Load the module and patch table names."""
         # Load module from file
-        module_name = self.model_file_path.stem
-        spec = importlib.util.spec_from_file_location(module_name, self.model_file_path)
-        module = importlib.util.module_from_spec(spec)
-
-        # Add to sys.modules and execute
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        if self.model_file_path:
+            module_name = Path(self.model_file_path).stem
+            spec = importlib.util.spec_from_file_location(
+                module_name, self.model_file_path
+            )
+            module = importlib.util.module_from_spec(spec)
+            # Add to sys.modules and execute
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+        else:
+            module_name = self.import_path
+            module = importlib.import_module(
+                self.import_path
+                # "acr_harmonized_data_model.acr_harmonized_data_model"
+            )
 
         # Patch the module's tables
         if hasattr(module, "Base") and hasattr(module.Base, "metadata"):
@@ -149,13 +169,16 @@ class LinkMLModelLoader:
             if self.schema_name:
                 module.Base.metadata.schema = self.schema_name
 
+            patched_count = 0
             for table in list(module.Base.metadata.tables.values()):
                 original_name = table.name
                 new_name = self.table_prefix.format(original_name.lower())
-                logging.info(f"  Patching table: '{original_name}' -> '{new_name}'")
+                logging.debug(f"  Patching table: '{original_name}' -> '{new_name}'")
                 table.name = new_name
+                patched_count += 1
                 if self.schema_name:
                     table.schema = self.schema_name
+            logging.info(f"{patched_count} tables patched")
         else:
             logging.warning(f"Module '{module_name}' does not have Base.metadata")
 
