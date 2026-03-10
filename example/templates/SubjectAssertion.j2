@@ -6,7 +6,7 @@
     "reference": "Patient/{{subject.id}}"
   },
   "status": "final",
-  "category": "{{subject_assertion.category}}",
+  "category": [ "{{subject_assertion.category}}" ],
   "code": {{ fhir.codeableconcept(subject_assertion.display,
     (
                 subject_assertion.code,
