@@ -1,3 +1,5 @@
+{%- set race=HARMONIZE.harmonize(subject.has_demographics.race[0], 'race') -%}
+
 {
   "resourceType": "Patient",
   "id": "{{subject.id}}",
@@ -17,9 +19,9 @@
             {
                 "url": "ombCategory",
                 "valueCoding": {
-                    "system": "urn:oid:2.16.840.1.113883.6.238",
-                    "code": "{{ HARMONIZE.harmonize(subject.has_demographics.race[0], "race")[0].code }}",
-                    "display": "{{ HARMONIZE.harmonize(subject.has_demographics.race[0], "race")[0].display }}"
+                  "code": "{{ race[0].code }}",
+                  "display": "{{ race[0].display }}",
+                  "system": "{{ race[0].system }}"
                 }
             },
             {
