@@ -94,9 +94,6 @@ class ValidateAgainstIG:
                 logging.info(response["request_url"])
                 logging.error(response["status_code"])
                 print(response.keys())
-                import pdb
-
-                pdb.set_trace()
                 logging.debug(format_operation_outcome(response["response"]))
                 sys.exit(1)
                 # logging.error(response)
