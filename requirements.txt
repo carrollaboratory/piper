@@ -3,3 +3,4 @@ PyYAML==6.0.3
 duckdb==1.4.4
 psycopg[binary]==3.3.2
 ncpi_fhir_client @ git+https://github.com/ncpi-fhir/ncpi-fhir-client
+acr-harmonized-data-model @ https://github.com/anvilproject/acr-harmonized-data-model/releases/download/main/acr_harmonized_data_model-0.0.0.post156.dev0+025cbe1-py3-none-any.whl

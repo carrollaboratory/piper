@@ -60,6 +60,18 @@ class TypingBase(DeclarativeBase):
 # Used for typing the SQL Alchemy classes
 T = TypeVar("T", bound=TypingBase)
 
+""" If we want to pull the harmony content directly from the model, this
+should work:
+
+
+from importlib.resources import files
+
+harmony_csv = files("acr_harmonized_data_model").joinpath("harmony.csv")
+with harmony_csv.open("r") as f:
+    content = f.read()
+
+"""
+
 
 class TemplateProjector:
     curie_map = {}
