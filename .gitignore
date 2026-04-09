@@ -3,6 +3,7 @@
 .direnv
 .bash_history_local
 _version.py
+src/piper/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
