@@ -32,9 +32,13 @@ dependencies = [
   "psycopg[binary]",
   "camel_converter",
   "sqlalchemy",
-  "acr-harmonized-data-model @ https://github.com/anvilproject/acr-harmonized-data-model/releases/download/main/acr_harmonized_data_model-0.0.0.post156.dev0+025cbe1-py3-none-any.whl"
-]
+  "fhir",       # hl7 fhir library
+  "ncpi_fhir_client @ git+https://github.com/ncpi-fhir/ncpi-fhir-client"
 
+]
+# In your projects, you will use something like the following to install the appropriate
+# data model
+# "acr-harmonized-data-model @ https://github.com/anvilproject/acr-harmonized-data-model/releases/download/main/acr_harmonized_data_model-0.0.0.post156.dev0+025cbe1-py3-none-any.whl"
 [project.optional-dependencies]
 dev = [
     "rich",
