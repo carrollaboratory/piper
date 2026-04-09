@@ -82,6 +82,7 @@ class TemplateProjector:
         template_dir: Path,
         resource_consumers: List[Callable],
         harmony_file: Path | None = None,
+        harmony: Harmony | None = None,
     ):
         """
         Manage the linking between the data model and it's projection.
