@@ -8,7 +8,7 @@ from pathlib import Path
 import requests
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
-
+from sqlalchemy.inspection import inspect
 
 def get_local_git_sha(file_path: Path):
     """Calculates the Git-style SHA1 hash of a local file."""
@@ -61,6 +61,10 @@ def sync_github_file(
     logging.warn("Download complete.")
     return save_as
 
+def get_model_pk(classname):
+    """Return the primary key associated with the specified class"""
+    mapper = inspect(classname)
+    return [column.key for column in mapper.primary_key]
 
 class LinkMLModelLoader:
     """Helper class for loading and using LinkML-generated SQLAlchemy models with DBT tables."""
@@ -208,4 +212,4 @@ class LinkMLModelLoader:
                     for row in partition:
                         yield row[0]
             except Exception as e:
-                logging.error(f"Error streaming {class_name.__name__}: {e}.")
+                logging.error(f"Error streaming {class_name}: {e}.")
