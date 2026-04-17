@@ -73,6 +73,66 @@ def setup_logging(level="INFO", log_file="output/log.txt"):
     logging.config.dictConfig(config)
 
 
+def get_template_error_info():
+    """Extracts lineno and filename from an active UndefinedError."""
+    exc_type, exc_value, tb = sys.exc_info()
+    # Iterate through frames to find the one associated with the template
+    while tb:
+        # Jinja uses '<template>' or the actual filename if loaded via FileSystemLoader
+        if tb.tb_frame.f_code.co_filename != __file__:
+            return {
+                "filename": tb.tb_frame.f_code.co_filename,
+                "lineno": tb.tb_lineno,
+                "message": str(exc_value),
+            }
+        tb = tb.tb_next
+    return None
+
+def get_accurate_template_line(tb):
+    """
+    Checks if Jinja has already mapped the line or if manual
+    translation is required via the template object.
+    """
+    # Look for the hidden Jinja template reference in the execution frame
+    template = tb.tb_frame.f_globals.get("__jinja_template__")
+    if template is not None:
+        # If this is present, it's safer to use Jinja's mapping
+        return template.get_corresponding_lineno(tb.tb_lineno)
+
+    # Fallback to the raw line number if no mapping exists
+    return tb.tb_lineno
+
+def get_real_template_error(template_obj):
+    """Translates the Python-bytecode line number back to the Jinja source line."""
+    exc_type, exc_value, tb = sys.exc_info()
+
+    # Iterate back through the traceback to find the template execution frame
+    while tb:
+        # Check if this frame is where Jinja executed the template
+        # Usually marked as '<template>' or the actual filename if loaded via Loader
+        if tb.tb_frame.f_code.co_filename in ["<template>", template_obj.filename]:
+            # Use Jinja's internal mapper to find the correct line
+            real_lineno = template_obj.get_corresponding_lineno(tb.tb_lineno)
+            return {
+                "filename": template_obj.filename or "Memory/String",
+                "template_line": real_lineno,
+                "python_line": tb.tb_lineno,  # This is your 179
+                "message": str(exc_value),
+            }
+        tb = tb.tb_next
+    return None
+
+
+def extract_jinja_linenumber():
+    exc_type, exc_value, tb = sys.exc_info()
+    while tb:
+        # Jinja often uses '<template>' as the filename in the stack frame
+        if tb.tb_frame.f_code.co_filename == "<template>":
+            return tb.tb_lineno
+        tb = tb.tb_next
+    return None
+
+
 def debug_print(
     template_name: str, resource: str, error_line: int = 0, errorfields: List[str] = []
 ):

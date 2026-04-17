@@ -3,7 +3,7 @@ import logging
 import sys
 from typing import Callable, DefaultDict, Dict, List, TypeVar
 
-from fhir.resources import get_fhir_model_class
+from fhir.resources.R4B import get_fhir_model_class
 from pydantic import ValidationError
 
 from .. import debug_print

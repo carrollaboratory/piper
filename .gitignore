@@ -2,6 +2,7 @@
 .envrc
 .direnv
 .bash_history_local
+src/piper/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -40,18 +40,27 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Callable, DefaultDict, Dict, List, TypeVar
+from typing import Callable, DefaultDict, Dict, List, TypeVar, TYPE_CHECKING
 
+import jinja2.exceptions
 from camel_converter import to_snake
 from jinja2 import Environment, FileSystemLoader, Template, TemplateSyntaxError
 from pydantic import ValidationError
-from sqlalchemy import inspect
+# from sqlalchemy import inspect
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import DeclarativeBase
 
-from . import debug_print
+from . import (
+    debug_print,
+    extract_jinja_linenumber,
+    get_real_template_error,
+    get_template_error_info,
+)
 from .exceptions import ProjectionError
 from .harmony import Harmony
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 class TypingBase(DeclarativeBase):
     pass
@@ -82,6 +91,7 @@ class TemplateProjector:
         template_dir: Path,
         resource_consumers: List[Callable],
         harmony_file: Path | None = None,
+        data_model = None
     ):
         """
         Manage the linking between the data model and it's projection.
@@ -96,6 +106,9 @@ class TemplateProjector:
         logging.info(f"Projection Directory: '{template_dir}")
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
 
+        self.datamodel = data_model
+
+        self.harmony = None
         if harmony_file and harmony_file.exists():
             self.harmony = Harmony(str(harmony_file))
 
@@ -126,10 +139,31 @@ class TemplateProjector:
                     f"Malformed template file, '{e.filename}' at line {e.lineno}:"
                 )
                 logging.error(f" - {e.message})")
-                import pdb
 
-                pdb.set_trace()
                 logging.error(f"Error loading template {filename}: {e}")
+
+    def add_backref(self, entry: T,  cname: str, ref: dict, context: dict, sess: "Session"):
+        """Add a backreference variable to a template's context
+
+        For relationships that aren't directly supported by the linkml SQLA class,
+        we can add the references into the configuration. This will build the
+        right list of data from the database and assign it to the suggested var
+
+        Args:
+            cname (str): The class name from the config file
+            ref (dict): The details required to pull the data
+
+        Returns:
+            This will add the new variable to the context
+        """
+
+        varname = ref['varname']
+        cls = self.datamodel.get_model(cname)
+        fk = getattr(cls, ref['fk'])
+        id = getattr(entry, ref['fk'])
+        records = sess.query(cls).filter(fk==id).all()
+        context[varname] = records
+
 
     def render_object(
         self,
@@ -157,31 +191,63 @@ class TemplateProjector:
         # We don't really care what model calls the study, only that it is provided
         study_varname = to_snake(study.__class__.__name__)
 
-        # Passes the instance to the template as 'obj'
-        # We probably should define what we are calling study and subject's
-        # here in the config
-        if study_subject:
-            # We don't really care what model calls the subject, only that it
-            # is provided
-            subject_varname = to_snake(study_subject.__class__.__name__)
+        session = None
+        if self.datamodel:
+            session = self.datamodel.create_session()
+        try:
+            # Passes the instance to the template as 'obj'
+            # We probably should define what we are calling study and subject's
+            # here in the config
+            if study_subject:
+                # We don't really care what model calls the subject, only that it
+                # is provided
+                subject_varname = to_snake(study_subject.__class__.__name__)
 
-            return template.render(
-                **{varname: obj, study_varname: study, subject_varname: study_subject}
+                return template.render(
+                    **{
+                        varname: obj,
+                        study_varname: study,
+                        subject_varname: study_subject,
+                        session: session
+                    }
+                )
+            else:
+                return template.render(**{varname: obj, study_varname: study})
+        except jinja2.exceptions.UndefinedError as e:
+            err_details = get_real_template_error(template)
+            source, filename, uptodate = self.env.loader.get_source(
+                self.env, template.name
             )
-        else:
-            return template.render(**{varname: obj, study_varname: study})
+            debug_print(
+                filename,
+                resource=source,
+                error_line=err_details["python_line"],
+            )
+            logging.error(e.message)
+            logging.error(err_details)
+            sys.exit(1)
 
     def black_list(self, model_component: str):
         """Return the list of fields that a particular model component should
         ignore while traversing it's children (ie these will be expected to be
-        handled elsewhere."""
+        handled elsewhere.
+
+        NOTE - This is probably no longer relevant based on the newer model
+        where we are just iterating over the templates directly
+        """
         blacklist = set(self.model_helpers.keys())
         if model_component in self.model_helpers:
             blacklist.update(self.model_helpers[model_component]["blacklist"])
         return blacklist
 
-    def consume(self, resource, template_name="Unknown"):
+    def consume(self, resource: str, template_name="Unknown"):
+        """Feed output of a template projection to each of of the consumers.
 
+        Args:
+            resource (str): This is the projected resource
+            template_name (str): Helpful for debugging
+
+        """
         try:
             payload = json.loads(resource)
         except json.JSONDecodeError as e:
@@ -189,6 +255,7 @@ class TemplateProjector:
                 decode_err=e, body=resource, template_name=template_name
             )
             debug_print(template_name, resource=resource, error_line=err.lnum)
+            logging.error(e)
             sys.exit(1)
 
         resource_type = payload.get("resourceType")
@@ -201,6 +268,34 @@ class TemplateProjector:
         # We'll provide the raw JSON to our consumers
         for consumer in self.resource_consumers:
             consumer(template_name, resource, payload)
+
+
+    def process_entry(self, entry: T, study: T, model_helpers: dict):
+        """Process any type of template"""
+        study_classname = study.__class__.__name__
+        study_varname = to_snake(study_classname)
+        classname = entry.__class__.__name__
+
+        innersess = self.datamodel.create_session()
+
+        varname = to_snake(classname)
+        template = self.templates[classname]
+
+        tcontext = {
+            varname: entry, study_varname: study
+        }
+
+        # Check to see if we need to add any other data into the template
+        # context.
+        if classname in model_helpers:
+            backrefs = model_helpers[classname].get("backrefs")
+            if backrefs:
+                for cname, ref in backrefs.items():
+                    self.add_backref(entry=entry, cname=cname, ref=ref, context=tcontext, sess=innersess)
+
+        self.consume(
+            template.render(**tcontext), template_name=classname
+        )
 
     def process_study(self, study: T):
         """
@@ -219,42 +314,14 @@ class TemplateProjector:
             template.render(**{study_varname: study}), template_name=study_classname
         )
 
-        # Unless we decide we want to fully recurse the tree and track our
-        # progress to prevent dupes, we can just handle "subjects" differently
-        # than the rest of the stuff found inside a study.
-        #
-        # TODO: What about study specific stuff that is also tagged by a
-        # subject, like the Access Control Record. That should be instantiated
-        # at the same level as the study members, but will need to be
-        # referenced by the subject's members.
-
-        # For now, we'll just grab the classes found inside the model_keys map
-
-        for varname, rel in inspect(study.__class__).relationships.items():
-            related_class = rel.mapper.class_
-            blacklist = self.black_list("study")
-
-            # We assume that any projections will exist and match our
-            # classnames
-            if related_class in self.templates:
-                # Skip special vars
-                if varname not in blacklist:
-                    if not rel.uselist:
-                        items = [getattr(study, varname)]
-                    else:
-                        items = getattr(study, varname)
-
-                        for item in items:
-                            self.consume(
-                                template.render_object(
-                                    item, study=study, class_name=related_class
-                                )
-                            )
-
     def process_subject(self, subject: T, study: T):
         """
         Accept a single subject instance and generate all of the related FHIR
         resources associated with that particular subject.
+
+        WARNING - This is no longer relevant, but I'm leaving the code for
+        reference for the time being, since it uses some SQLA stuff that
+        could be useful later one.
 
         TODO: If there are situations where resources are nested deeper than
         directly inside the patient, we'll need to consider a recursive
@@ -291,5 +358,6 @@ class TemplateProjector:
                             study_subject=subject,
                             study=study,
                             class_name=related_class.__name__,
-                        )
+                        ),
+                        template_name=related_class.__name__,
                     )

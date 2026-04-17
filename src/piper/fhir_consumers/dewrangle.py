@@ -4,6 +4,7 @@ projected. These will all support the same function and will be passed to the
 streamer to allow flexible selections.
 """
 
+import atexit
 import json
 from pathlib import Path
 
@@ -23,6 +24,7 @@ class DewrangleJSON:
         self.file = None
         self.buffersize = buffersize
         self.resources = []
+        atexit.register(self._destruct)
 
     def __enter__(self):
         """We could create the file here, but let's wait until there is
@@ -56,8 +58,17 @@ class DewrangleJSON:
             self._dump_buffer_to_file()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self._destruct()
+
+    def _destruct(self):
         """Make sure that the file's list is properly closed before closing the
         the file entirely."""
+
+        print(f"Exiting dewrangle consumer with {len(self.resources)}. ")
+        if len(self.resources) > 0:
+            self._dump_buffer_to_file()
+            print(f"Written to file.")
+
         if self.file:
             self.file.write("\n]")
             self.file.close()

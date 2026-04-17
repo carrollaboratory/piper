@@ -5,11 +5,13 @@ import os
 import sys
 from argparse import ArgumentParser, FileType
 from collections import defaultdict
+from importlib.metadata import version
 from pathlib import Path
 
 from yaml import safe_load
 
 from piper.datamodel import LinkMLModelLoader
+from piper.datamodel.linkml import get_model_pk
 from piper.fhir_consumers import (
     DewrangleJSON,
     ResourceSummary,
@@ -124,6 +126,14 @@ def run():
         nargs="+",
         help="YAML configuration for data extraction",
     )
+    parser.add_argument(
+        "--harmony",
+        type=FileType("rt"),
+        help="File to be used for lookups",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {version('piper')}"
+    )
     args = parser.parse_args()
     setup_logging(args.log_level)
 
@@ -150,6 +160,8 @@ def run():
         db_schema_name = config["db"][args.dbenv]["db_schema_name"]
         tbl_prefix = config["db"]["table_name_template"]
 
+        harmony_file = args.harmony or Path(config.get("harmony"))
+
         logging.info(f"Projection Configuration:\t'{cfg.name}'")
         model_config = config["data_model"]
         if "as_file" in model_config:
@@ -173,15 +185,23 @@ def run():
             model_helpers=model_helpers,
             template_dir=projection_template_dir,
             resource_consumers=resource_consumers,
-            harmony_file=Path("staging/harmony.csv"),
+            harmony_file=harmony_file,
+            data_model=datamodel
         )
         projections = defaultdict(list)
 
         # Studies
-        study_model = datamodel.get_model(model_helpers["study"]["classname"])
+        study_classname = model_helpers["study"]["classname"]
+        study_model = datamodel.get_model(study_classname)
+        study_pk = get_model_pk(study_model)
+        # For now, let's not allow our primary keys to be complex
+        assert len(study_pk) == 1
+        study_pk = study_pk[0]
         studies = session.query(study_model).all()
         logging.info(f"{len(studies)} studies found")
 
+        # These are the ids we will recognize as being relevant
+        study_ids = set()
         with Progress() as progress:
             task = progress.add_task("Processing Studies ", total=len(studies))
 
@@ -192,7 +212,28 @@ def run():
                     projections.update(local_projections)
                     progress.update(task, advance=1)
 
-        resource_summary.reset("Study Data")
+                    study_id = getattr(study, study_pk)
+
+                    # Now, let's grab all of the data associated with that
+                    # study
+
+                    innersess = datamodel.create_session()
+                    for cls in projector.templates.keys():
+                        # No point in redoing the study again
+                        if cls != study_classname:
+                            # Extract the appropriate SQLA Class
+                            dataclass = datamodel.get_model(cls)
+                            # Get the study_id attribute so that we can
+                            # perform the necessary query
+                            key_attr = getattr(dataclass, study_pk)
+
+                            # Grab the data!
+                            content = innersess.query(dataclass).filter(key_attr == study_id).all()
+                            for entry in content:
+                                projector.process_entry(entry=entry, study=study, model_helpers=model_helpers)
+
+                    resource_summary.reset(f"Study '{study_id}' Data")
+        """
         # Subjects
         local_projections = defaultdict(list)
 
@@ -213,5 +254,5 @@ def run():
 
         resource_summary.reset("Patient Data")
         # with Path("output/data_resources.json").open('rt') as f:
-
+        """
         resource_summary.report_totals("All Data")
