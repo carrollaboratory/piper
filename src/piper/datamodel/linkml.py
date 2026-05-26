@@ -9,6 +9,7 @@ import requests
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.inspection import inspect
+from sqlalchemy.pool import StaticPool
 
 def get_local_git_sha(file_path: Path):
     """Calculates the Git-style SHA1 hash of a local file."""
@@ -73,7 +74,7 @@ class LinkMLModelLoader:
 
     def __init__(
         self,
-        database_url,
+        database_url=None,
         model_import_path=None,
         model_as_file=None,
         table_prefix="tgt_",
@@ -134,9 +135,24 @@ class LinkMLModelLoader:
         self.engine = None
         self.Session = None
 
+    @property
+    def _conn_dialect(self):
+        module_name = type(self.dbconn).__module__
+
+        if "duckdb" in module_name:
+            return "duckdb"
+
+        if "sqlite" in module_name:
+            return "sqlite"
+
+        if "psycopg" in module_name:
+            return "postgresql"
+
+        raise TypeError(f"Unsupported database connection type: {module_name}")
+
     def load(self):
         """Load the models and set up database connection."""
-        # Create engine
+
         self.engine = create_engine(self.database_url)
 
         # Patch and load module

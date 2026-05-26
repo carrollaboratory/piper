@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
   "linkml>=1.9.1",
   "PyYAML",
+  "json_repair",
   "duckdb",
   "duckdb-engine",
   "psycopg[binary]",
