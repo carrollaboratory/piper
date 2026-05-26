@@ -65,6 +65,115 @@ def build_host_config():
     }
 
 
+def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=None, dbenv='dev'):
+    config = safe_load(cfg)
+    print(config)
+
+    database_uri = dburi
+    if not database_uri:
+        database_uri = config["db"][dbenv]["uri"]
+
+    db_schema_name = config["db"][dbenv]["db_schema_name"]
+    tbl_prefix = config["db"]["table_name_template"]
+
+    harmony_file = harmony_file or Path(config.get("harmony"))
+
+    logging.info(f"Projection Configuration:\t'{cfg.name}'")
+    model_config = config["data_model"]
+    if "as_file" in model_config:
+        logging.info(
+            f"Loading model:\t'{model_config['as_file']['model_filename']}'"
+        )
+
+    datamodel = LinkMLModelLoader(
+        database_url=database_uri,
+        model_as_file=model_config.get("as_file"),
+        model_import_path=model_config.get("import_path"),
+        table_prefix=tbl_prefix,
+        schema_name=db_schema_name,
+    ).load()
+    session = datamodel.create_session()
+
+    projection_template_dir = config["projection"]["templates"]
+    model_helpers = config["data_model"]["model_helpers"]
+    TemplateProjector.curie_map = config["projection"]["curie_mappings"]
+    projector = TemplateProjector(
+        model_helpers=model_helpers,
+        template_dir=projection_template_dir,
+        resource_consumers=resource_consumers,
+        harmony_file=harmony_file,
+        data_model=datamodel
+    )
+    projections = defaultdict(list)
+
+    # Studies
+    study_classname = model_helpers["study"]["classname"]
+    study_model = datamodel.get_model(study_classname)
+    study_pk = get_model_pk(study_model)
+    # For now, let's not allow our primary keys to be complex
+    assert len(study_pk) == 1
+    study_pk = study_pk[0]
+    studies = session.query(study_model).all()
+    logging.info(f"{len(studies)} studies found")
+
+    # These are the ids we will recognize as being relevant
+    study_ids = set()
+    with Progress() as progress:
+        task = progress.add_task("Processing Studies ", total=len(studies))
+
+        for study in studies:
+            if study:
+                local_projections = defaultdict(list)
+                projector.process_study(study)
+                projections.update(local_projections)
+                progress.update(task, advance=1)
+
+                study_id = getattr(study, study_pk)
+
+                # Now, let's grab all of the data associated with that
+                # study
+
+                innersess = datamodel.create_session()
+                for cls in projector.templates.keys():
+                    # No point in redoing the study again
+                    if cls != study_classname:
+                        # Extract the appropriate SQLA Class
+                        dataclass = datamodel.get_model(cls)
+                        # Get the study_id attribute so that we can
+                        # perform the necessary query
+                        key_attr = getattr(dataclass, study_pk)
+
+                        # Grab the data!
+                        content = innersess.query(dataclass).filter(key_attr == study_id).all()
+                        for entry in content:
+                            projector.process_entry(entry=entry, study=study, model_helpers=model_helpers)
+
+                resource_summary.reset(f"Study '{study_id}' Data")
+    """
+    # Subjects
+    local_projections = defaultdict(list)
+
+    # Get Subject count for progress bar
+    subject_model = datamodel.get_model(model_helpers["subject"]["classname"])
+    subject_count = session.query(subject_model).count()
+    with Progress() as progress:
+        task = progress.add_task("Processing Subjects ", total=subject_count)
+
+        # for subject in subjects:
+        for subject in datamodel.stream(model_helpers["subject"]["classname"]):
+            # TODO: if we have more than one study, how are we handling
+            # participants? Are they found inside the study or do they point
+            # to their primary study? Is there a mechanism we need to use to
+            # single out the primary study resource?
+            projector.process_subject(subject, study=studies[0])
+            progress.update(task, advance=1)
+
+    resource_summary.reset("Patient Data")
+    # with Path("output/data_resources.json").open('rt') as f:
+    """
+    resource_summary.report_totals("All Data")
+
+
 def run():
     hosts_file = Path("~/.fhir_hosts").expanduser()
     host_config = None
@@ -155,104 +264,9 @@ def run():
         resource_consumers.append(ValidateAgainstIG(hostcfg, args.max_validation_count))
 
     for cfg in args.config:
-        config = safe_load(cfg)
-        database_uri = config["db"][args.dbenv]["uri"]
-        db_schema_name = config["db"][args.dbenv]["db_schema_name"]
-        tbl_prefix = config["db"]["table_name_template"]
-
-        harmony_file = args.harmony or Path(config.get("harmony"))
-
-        logging.info(f"Projection Configuration:\t'{cfg.name}'")
-        model_config = config["data_model"]
-        if "as_file" in model_config:
-            logging.info(
-                f"Loading model:\t'{model_config['as_file']['model_filename']}'"
-            )
-
-        datamodel = LinkMLModelLoader(
-            database_url=database_uri,
-            model_as_file=model_config.get("as_file"),
-            model_import_path=model_config.get("import_path"),
-            table_prefix=tbl_prefix,
-            schema_name=db_schema_name,
-        ).load()
-        session = datamodel.create_session()
-
-        projection_template_dir = config["projection"]["templates"]
-        model_helpers = config["data_model"]["model_helpers"]
-        TemplateProjector.curie_map = config["projection"]["curie_mappings"]
-        projector = TemplateProjector(
-            model_helpers=model_helpers,
-            template_dir=projection_template_dir,
+        play(cfg=cfg,
             resource_consumers=resource_consumers,
-            harmony_file=harmony_file,
-            data_model=datamodel
-        )
-        projections = defaultdict(list)
-
-        # Studies
-        study_classname = model_helpers["study"]["classname"]
-        study_model = datamodel.get_model(study_classname)
-        study_pk = get_model_pk(study_model)
-        # For now, let's not allow our primary keys to be complex
-        assert len(study_pk) == 1
-        study_pk = study_pk[0]
-        studies = session.query(study_model).all()
-        logging.info(f"{len(studies)} studies found")
-
-        # These are the ids we will recognize as being relevant
-        study_ids = set()
-        with Progress() as progress:
-            task = progress.add_task("Processing Studies ", total=len(studies))
-
-            for study in studies:
-                if study:
-                    local_projections = defaultdict(list)
-                    projector.process_study(study)
-                    projections.update(local_projections)
-                    progress.update(task, advance=1)
-
-                    study_id = getattr(study, study_pk)
-
-                    # Now, let's grab all of the data associated with that
-                    # study
-
-                    innersess = datamodel.create_session()
-                    for cls in projector.templates.keys():
-                        # No point in redoing the study again
-                        if cls != study_classname:
-                            # Extract the appropriate SQLA Class
-                            dataclass = datamodel.get_model(cls)
-                            # Get the study_id attribute so that we can
-                            # perform the necessary query
-                            key_attr = getattr(dataclass, study_pk)
-
-                            # Grab the data!
-                            content = innersess.query(dataclass).filter(key_attr == study_id).all()
-                            for entry in content:
-                                projector.process_entry(entry=entry, study=study, model_helpers=model_helpers)
-
-                    resource_summary.reset(f"Study '{study_id}' Data")
-        """
-        # Subjects
-        local_projections = defaultdict(list)
-
-        # Get Subject count for progress bar
-        subject_model = datamodel.get_model(model_helpers["subject"]["classname"])
-        subject_count = session.query(subject_model).count()
-        with Progress() as progress:
-            task = progress.add_task("Processing Subjects ", total=subject_count)
-
-            # for subject in subjects:
-            for subject in datamodel.stream(model_helpers["subject"]["classname"]):
-                # TODO: if we have more than one study, how are we handling
-                # participants? Are they found inside the study or do they point
-                # to their primary study? Is there a mechanism we need to use to
-                # single out the primary study resource?
-                projector.process_subject(subject, study=studies[0])
-                progress.update(task, advance=1)
-
-        resource_summary.reset("Patient Data")
-        # with Path("output/data_resources.json").open('rt') as f:
-        """
-        resource_summary.report_totals("All Data")
+            resource_summary=resource_summary,
+            harmony_file=args.harmony,
+            dbconn=None,
+            dbenv=args.dbenv)

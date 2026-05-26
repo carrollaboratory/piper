@@ -40,12 +40,14 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Callable, DefaultDict, Dict, List, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, DefaultDict, Dict, List, TypeVar
 
 import jinja2.exceptions
 from camel_converter import to_snake
 from jinja2 import Environment, FileSystemLoader, Template, TemplateSyntaxError
+from json_repair import repair_json
 from pydantic import ValidationError
+
 # from sqlalchemy import inspect
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import DeclarativeBase
@@ -61,6 +63,7 @@ from .harmony import Harmony
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
 
 class TypingBase(DeclarativeBase):
     pass
@@ -91,7 +94,7 @@ class TemplateProjector:
         template_dir: Path,
         resource_consumers: List[Callable],
         harmony_file: Path | None = None,
-        data_model = None
+        data_model=None,
     ):
         """
         Manage the linking between the data model and it's projection.
@@ -142,7 +145,9 @@ class TemplateProjector:
 
                 logging.error(f"Error loading template {filename}: {e}")
 
-    def add_backref(self, entry: T,  cname: str, ref: dict, context: dict, sess: "Session"):
+    def add_backref(
+        self, entry: T, cname: str, ref: dict, context: dict, sess: "Session"
+    ):
         """Add a backreference variable to a template's context
 
         For relationships that aren't directly supported by the linkml SQLA class,
@@ -157,13 +162,12 @@ class TemplateProjector:
             This will add the new variable to the context
         """
 
-        varname = ref['varname']
+        varname = ref["varname"]
         cls = self.datamodel.get_model(cname)
-        fk = getattr(cls, ref['fk'])
-        id = getattr(entry, ref['fk'])
-        records = sess.query(cls).filter(fk==id).all()
+        fk = getattr(cls, ref["fk"])
+        id = getattr(entry, ref["fk"])
+        records = sess.query(cls).filter(fk == id).all()
         context[varname] = records
-
 
     def render_object(
         self,
@@ -208,7 +212,7 @@ class TemplateProjector:
                         varname: obj,
                         study_varname: study,
                         subject_varname: study_subject,
-                        session: session
+                        session: session,
                     }
                 )
             else:
@@ -255,8 +259,18 @@ class TemplateProjector:
                 decode_err=e, body=resource, template_name=template_name
             )
             debug_print(template_name, resource=resource, error_line=err.lnum)
-            logging.error(e)
-            sys.exit(1)
+            logging.warning(e)
+
+            try:
+                logging.debug("Trying to repair...")
+                resource = repair_json(resource)
+                payload = json.loads(resource)
+                logging.debug("Success!")
+            except ValueError:
+                logging.error(
+                    f"The template, {template_name}, is not a valid JSON object."
+                )
+                sys.exit(1)
 
         resource_type = payload.get("resourceType")
         if not resource_type:
@@ -269,7 +283,6 @@ class TemplateProjector:
         for consumer in self.resource_consumers:
             consumer(template_name, resource, payload)
 
-
     def process_entry(self, entry: T, study: T, model_helpers: dict):
         """Process any type of template"""
         study_classname = study.__class__.__name__
@@ -281,9 +294,7 @@ class TemplateProjector:
         varname = to_snake(classname)
         template = self.templates[classname]
 
-        tcontext = {
-            varname: entry, study_varname: study
-        }
+        tcontext = {varname: entry, study_varname: study}
 
         # Check to see if we need to add any other data into the template
         # context.
@@ -291,11 +302,15 @@ class TemplateProjector:
             backrefs = model_helpers[classname].get("backrefs")
             if backrefs:
                 for cname, ref in backrefs.items():
-                    self.add_backref(entry=entry, cname=cname, ref=ref, context=tcontext, sess=innersess)
+                    self.add_backref(
+                        entry=entry,
+                        cname=cname,
+                        ref=ref,
+                        context=tcontext,
+                        sess=innersess,
+                    )
 
-        self.consume(
-            template.render(**tcontext), template_name=classname
-        )
+        self.consume(template.render(**tcontext), template_name=classname)
 
     def process_study(self, study: T):
         """
