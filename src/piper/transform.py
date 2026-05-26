@@ -85,8 +85,6 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
             f"Loading model:\t'{model_config['as_file']['model_filename']}'"
         )
 
-    import pdb
-    pdb.set_trace()
     datamodel = LinkMLModelLoader(
         database_url=database_uri,
         model_as_file=model_config.get("as_file"),
