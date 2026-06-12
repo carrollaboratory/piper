@@ -7,9 +7,10 @@ from pathlib import Path
 
 import requests
 from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy.inspection import inspect
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
 
 def get_local_git_sha(file_path: Path):
     """Calculates the Git-style SHA1 hash of a local file."""
@@ -62,10 +63,12 @@ def sync_github_file(
     logging.warn("Download complete.")
     return save_as
 
+
 def get_model_pk(classname):
     """Return the primary key associated with the specified class"""
     mapper = inspect(classname)
     return [column.key for column in mapper.primary_key]
+
 
 class LinkMLModelLoader:
     """Helper class for loading and using LinkML-generated SQLAlchemy models with DBT tables."""
@@ -93,7 +96,7 @@ class LinkMLModelLoader:
 
         self.model_file_path = None
         self.github_repository
-        print(model_as_file)
+        logging.debug(f"Model as File: {model_as_file}")
         if model_as_file:
             if model_import_path is not None:
                 raise ValueError(
