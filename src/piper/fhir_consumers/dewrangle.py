@@ -8,10 +8,12 @@ import atexit
 import json
 from pathlib import Path
 
+from .resource_consumer import ResourceConsumer
+
 
 # Write to a JSON file suitable for dewrangle
 #
-class DewrangleJSON:
+class DewrangleJSON(ResourceConsumer):
     """Basically dump the resources to a single JSON file as members of a list.
 
     We'll buffer N resources before dumping the contents of the file.
@@ -25,11 +27,6 @@ class DewrangleJSON:
         self.buffersize = buffersize
         self.resources = []
         atexit.register(self._destruct)
-
-    def __enter__(self):
-        """We could create the file here, but let's wait until there is
-        actually something to write to it before we do."""
-        return self
 
     def _dump_buffer_to_file(self):
         """We'll cache a small number of resources. This is probably already
@@ -57,8 +54,8 @@ class DewrangleJSON:
         if len(self.resources) >= self.buffersize:
             self._dump_buffer_to_file()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._destruct()
+    # def __exit__(self, exc_type, exc_val, exc_tb):
+    #    self._destruct()
 
     def _destruct(self):
         """Make sure that the file's list is properly closed before closing the

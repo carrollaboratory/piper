@@ -8,20 +8,15 @@ from pydantic import ValidationError
 
 from .. import debug_print
 from ..exceptions import ProjectionError
+from .resource_consumer import ResourceConsumer
 from .utils import scrub_empty
 
 
-class ValidateResourceBasic:
+class ValidateResourceBasic(ResourceConsumer):
     """This just validates the basic conformance to FHIR resources. This won't
     catch IG errors, so that will be handled elsewhere. This should be fast
     enough to act as a basic sanity check for basic structure and general
     conformance before submitting to an external server for IG compliance."""
-
-    def __init__(self):
-        pass
-
-    def __enter__(self):
-        pass
 
     def __call__(self, template_name, resource, payload):
         """Validate resource using fhir.resource"""

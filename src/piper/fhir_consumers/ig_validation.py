@@ -10,6 +10,7 @@ from typing import Dict
 
 from ncpi_fhir_client.fhir_client import FhirClient
 
+from .resource_consumer import ResourceConsumer
 from .utils import scrub_empty
 
 
@@ -54,7 +55,7 @@ def format_operation_outcome(oo_dict):
 
 # Write to a JSON file suitable for dewrangle
 #
-class ValidateAgainstIG:
+class ValidateAgainstIG(ResourceConsumer):
     """Submit the resources to a FHIR server for validation.
 
     If max_validation_count is greater than 0, it will only validate that many
@@ -68,13 +69,9 @@ class ValidateAgainstIG:
         self.fhir_client = None
         # Initialize the FHIR client based on the config details.
         if self.fhir_client is None:
-            print(self.fhir_config)
+            # print(self.fhir_config)
 
             self.fhir_client = FhirClient(self.fhir_config)
-
-    def __enter__(self):
-        """For use in with statements"""
-        return self
 
     def __call__(self, template_name, resource, payload):
         """Feed in the resources one at a time from our iteration"""
@@ -93,12 +90,7 @@ class ValidateAgainstIG:
                 logging.info(json.dumps(cleaned_payload, indent=2))
                 logging.info(response["request_url"])
                 logging.error(response["status_code"])
-                print(response.keys())
+                logging.debug(response.keys())
                 logging.debug(format_operation_outcome(response["response"]))
                 sys.exit(1)
                 # logging.error(response)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Nothing really required here, but leaving it as an example for other
-        similar classes."""
-        pass
