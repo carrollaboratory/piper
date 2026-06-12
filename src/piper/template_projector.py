@@ -52,6 +52,8 @@ from pydantic import ValidationError
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import DeclarativeBase
 
+from piper.fhir_consumers.resource_consumer import ResourceConsumer
+
 from . import (
     debug_print,
     extract_jinja_linenumber,
@@ -92,7 +94,7 @@ class TemplateProjector:
         self,
         model_helpers: Dict,
         template_dir: Path,
-        resource_consumers: List[Callable],
+        resource_consumers: List[ResourceConsumer],
         harmony_file: Path | None = None,
         data_model=None,
     ):
@@ -283,6 +285,10 @@ class TemplateProjector:
         for consumer in self.resource_consumers:
             consumer(template_name, resource, payload)
 
+    def reset_summary(self, msg: str, report_locals: bool = True, console=None):
+        for consumer in self.resource_consumers:
+            consumer.reset(msg, report_locals, console=console)
+
     def process_entry(self, entry: T, study: T, model_helpers: dict):
         """Process any type of template"""
         study_classname = study.__class__.__name__
@@ -309,10 +315,9 @@ class TemplateProjector:
                         context=tcontext,
                         sess=innersess,
                     )
-
         self.consume(template.render(**tcontext), template_name=classname)
 
-    def process_study(self, study: T):
+    def process_study(self, study: T, model_helpers: dict):
         """
         Accept a single study instance for all non-participant level resources
 
@@ -321,13 +326,29 @@ class TemplateProjector:
         approach. I can't think of a situation like that OTOH.
         """
         # We don't really care what model calls the study, only that it is provided
+
         study_classname = study.__class__.__name__
         study_varname = to_snake(study_classname)
+
         template = self.templates[study_classname]
 
-        self.consume(
-            template.render(**{study_varname: study}), template_name=study_classname
-        )
+        tcontext = {study_varname: study}
+        # Check to see if we need to add any other data into the template
+        # context.
+        if study_classname in model_helpers:
+            innersess = self.datamodel.create_session()
+            backrefs = model_helpers[study_classname].get("backrefs")
+            if backrefs:
+                for cname, ref in backrefs.items():
+                    self.add_backref(
+                        entry=study,
+                        cname=cname,
+                        ref=ref,
+                        context=tcontext,
+                        sess=innersess,
+                    )
+
+        self.consume(template.render(**tcontext), template_name=study_classname)
 
     def process_subject(self, subject: T, study: T):
         """
