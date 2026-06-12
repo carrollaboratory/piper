@@ -6,7 +6,10 @@ import sys
 from argparse import ArgumentParser, FileType
 from collections import defaultdict
 from importlib.metadata import version
+
+# from nt import access
 from pathlib import Path
+from typing import Any
 
 from yaml import safe_load
 
@@ -30,6 +33,20 @@ try:
     from rich import print
 except:
     pass
+
+from sqlalchemy import inspect
+from sqlalchemy.ext.associationproxy import AssociationProxy
+from sqlalchemy.orm import selectinload
+
+
+def eager_load_proxies(model_cls):
+    """Realize those association proxies, since they sometimes miss by default"""
+    opts = []
+    for key, descriptor in inspect(model_cls).all_orm_descriptors.items():
+        if isinstance(descriptor, AssociationProxy):
+            rel_name = descriptor.target_collection
+            opts.append(selectinload(getattr(model_cls, rel_name)))
+    return opts
 
 
 def build_host_config():
@@ -65,9 +82,188 @@ def build_host_config():
     }
 
 
-def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=None, dbenv='dev'):
+def transform_class(
+    focus_classname: str,
+    datamodel: LinkMLModelLoader,
+    projector: TemplateProjector,
+    model_helpers: dict[str, Any],
+    black_list: list[str],
+):
+    session = datamodel.create_session()
+    projections = defaultdict(list)
+    focus_object = datamodel.get_model(focus_classname)
+    primary_key = get_model_pk(focus_object)
+
+    # Not ready for dealing with multiple primary keys yet
+    assert len(primary_key) == 1
+    primary_key = primary_key[0]
+
+    rows_of_interest = (
+        session.query(focus_object).options(*eager_load_proxies(focus_object)).all()
+    )
+    logging.info(f"{len(rows_of_interest)} access policies found")
+
+    observed_pkids = set()
+
+    with Progress() as progress:
+        task = progress.add_task(
+            f"Processing {focus_classname}", total=len(rows_of_interest)
+        )
+
+        for row in rows_of_interest:
+            if row:
+                local_projections = defaultdict(list)
+                projector.process_study(row, model_helpers=model_helpers)
+                projections.update(local_projections)
+                progress.update(task, advance=1)
+
+                pkid = getattr(row, primary_key)
+                observed_pkids.add(pkid)
+
+                # Now, let's grab all of the data associated with that
+                # study
+
+                innersess = datamodel.create_session()
+                for cls in projector.templates.keys():
+                    # No point in redoing the study again
+                    if cls not in black_list:
+                        # Extract the appropriate SQLA Class
+                        dataclass = datamodel.get_model(cls)
+                        # Get the study_id attribute so that we can
+                        # perform the necessary query
+                        key_attr = getattr(dataclass, primary_key)
+
+                        # Grab the data!
+                        content = (
+                            innersess.query(dataclass)
+                            .options(*eager_load_proxies(dataclass))
+                            .filter(key_attr == pkid)
+                            .all()
+                        )
+                        for entry in content:
+                            projector.process_entry(
+                                entry=entry, study=cls, model_helpers=model_helpers
+                            )
+                projector.reset_summary(
+                    f"{focus_classname} '{pkid}' data", console=progress.console
+                )
+
+
+def transform_studies(
+    datamodel: LinkMLModelLoader,
+    projector: TemplateProjector,
+    model_helpers: dict[str, Any],
+    study_cname: str = "ResearchStudy",
+    access_policy_cname: str = "AccessPolicy",
+):
+
+    session = datamodel.create_session()
+    projections = defaultdict(list)
+    study_model = datamodel.get_model(study_cname)
+    study_pk = get_model_pk(study_model)
+    assert len(study_pk) == 1
+    study_pk = study_pk[0]
+    studies = session.query(study_model).options(*eager_load_proxies(study_model)).all()
+    logging.info(f"{len(studies)} studies found")
+
+    # These are the ids we will recognize as being relevant
+    study_ids = set()
+    with Progress() as progress:
+        task = progress.add_task("Processing Studies ", total=len(studies))
+
+        for study in studies:
+            if study:
+                local_projections = defaultdict(list)
+                projector.process_study(study, model_helpers=model_helpers)
+                projections.update(local_projections)
+                progress.update(task, advance=1)
+
+                study_id = getattr(study, study_pk)
+
+                # Now, let's grab all of the data associated with that
+                # study
+
+                innersess = datamodel.create_session()
+                for cls in projector.templates.keys():
+                    # No point in redoing the study again
+                    if cls not in [access_policy_cname, study_cname]:
+                        # Extract the appropriate SQLA Class
+                        dataclass = datamodel.get_model(cls)
+                        # Get the study_id attribute so that we can
+                        # perform the necessary query
+                        key_attr = getattr(dataclass, study_pk)
+
+                        # Grab the data!
+                        content = (
+                            innersess.query(dataclass)
+                            .options(*eager_load_proxies(dataclass))
+                            .filter(key_attr == study_id)
+                            .all()
+                        )
+                        for entry in content:
+                            projector.process_entry(
+                                entry=entry, study=study, model_helpers=model_helpers
+                            )
+
+                projector.reset_summary(
+                    f"Study '{study_id}' data", console=progress.console
+                )
+
+
+def run_transform(
+    datamodel: LinkMLModelLoader,
+    projector: TemplateProjector,
+    cfg: str | dict[str, Any],
+    study_cname: str = "ResearchStudy",
+    access_policy_cname: str = "AccessPolicy",
+):
+    """Transform data where class and templates overlap.
+
+    Args:
+        datamodel: The LinkML data loader configured for the database schema
+        projector: The jinja projector
+        cfg: The data configuration (YAML file or object).
+        study_cname: LinkML class name for the study
+        access_policy_cname: LinkML class name for the access policy
+    """
+    config = cfg
+    if type(cfg) is str:
+        config = safe_load(cfg)
+
+    model_helpers = config["data_model"]["model_helpers"]
+    black_list = [study_cname, access_policy_cname]
+
+    # Extract all data related to the access policy
+    transform_class(
+        focus_classname=access_policy_cname,
+        datamodel=datamodel,
+        projector=projector,
+        model_helpers=model_helpers,
+        black_list=black_list,
+    )
+
+    # extract all of the data related to the study
+    transform_class(
+        focus_classname=study_cname,
+        datamodel=datamodel,
+        projector=projector,
+        model_helpers=model_helpers,
+        black_list=black_list,
+    )
+
+    projector.reset_summary(f"All data")
+
+
+def play(
+    cfg,
+    resource_consumers,
+    resource_summary,
+    harmony_file=None,
+    dburi=None,
+    dbenv="dev",
+):
     config = safe_load(cfg)
-    print(config)
+    # print(config)
 
     database_uri = dburi
     if not database_uri:
@@ -81,9 +277,7 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
     logging.info(f"Projection Configuration:\t'{cfg.name}'")
     model_config = config["data_model"]
     if "as_file" in model_config:
-        logging.info(
-            f"Loading model:\t'{model_config['as_file']['model_filename']}'"
-        )
+        logging.info(f"Loading model:\t'{model_config['as_file']['model_filename']}'")
 
     datamodel = LinkMLModelLoader(
         database_url=database_uri,
@@ -102,18 +296,36 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
         template_dir=projection_template_dir,
         resource_consumers=resource_consumers,
         harmony_file=harmony_file,
-        data_model=datamodel
+        data_model=datamodel,
     )
     projections = defaultdict(list)
 
+    access_policy_classname = model_helpers["access_policy"]["classname"]
+    access_policy_model = datamodel.get_model(access_policy_classname)
     # Studies
     study_classname = model_helpers["study"]["classname"]
+    transform_class(
+        focus_classname=access_policy_classname,
+        datamodel=datamodel,
+        projector=projector,
+        model_helpers=model_helpers,
+        black_list=[access_policy_classname, study_classname],
+    )
+
+    transform_class(
+        focus_classname=study_classname,
+        datamodel=datamodel,
+        projector=projector,
+        model_helpers=model_helpers,
+        black_list=[access_policy_classname, study_classname],
+    )
+    """
     study_model = datamodel.get_model(study_classname)
     study_pk = get_model_pk(study_model)
     # For now, let's not allow our primary keys to be complex
     assert len(study_pk) == 1
     study_pk = study_pk[0]
-    studies = session.query(study_model).all()
+    studies = session.query(study_model).options(*eager_load_proxies(study_model)).all()
     logging.info(f"{len(studies)} studies found")
 
     # These are the ids we will recognize as being relevant
@@ -124,7 +336,7 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
         for study in studies:
             if study:
                 local_projections = defaultdict(list)
-                projector.process_study(study)
+                projector.process_study(study, model_helpers=model_helpers)
                 projections.update(local_projections)
                 progress.update(task, advance=1)
 
@@ -136,7 +348,7 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
                 innersess = datamodel.create_session()
                 for cls in projector.templates.keys():
                     # No point in redoing the study again
-                    if cls != study_classname:
+                    if cls not in [access_policy_classname, study_classname]:
                         # Extract the appropriate SQLA Class
                         dataclass = datamodel.get_model(cls)
                         # Get the study_id attribute so that we can
@@ -144,11 +356,21 @@ def play(cfg, resource_consumers, resource_summary, harmony_file=None, dburi=Non
                         key_attr = getattr(dataclass, study_pk)
 
                         # Grab the data!
-                        content = innersess.query(dataclass).filter(key_attr == study_id).all()
+                        content = (
+                            innersess.query(dataclass)
+                            .options(*eager_load_proxies(dataclass))
+                            .filter(key_attr == study_id)
+                            .all()
+                        )
                         for entry in content:
-                            projector.process_entry(entry=entry, study=study, model_helpers=model_helpers)
+                            projector.process_entry(
+                                entry=entry, study=study, model_helpers=model_helpers
+                            )
 
-                resource_summary.reset(f"Study '{study_id}' Data")
+                resource_summary.reset(
+                    f"Study '{study_id}' Data", console=progress.console
+                )
+    """
     """
     # Subjects
     local_projections = defaultdict(list)
@@ -264,9 +486,11 @@ def run():
         resource_consumers.append(ValidateAgainstIG(hostcfg, args.max_validation_count))
 
     for cfg in args.config:
-        play(cfg=cfg,
+        play(
+            cfg=cfg,
             resource_consumers=resource_consumers,
             resource_summary=resource_summary,
             harmony_file=args.harmony,
             dbconn=None,
-            dbenv=args.dbenv)
+            dbenv=args.dbenv,
+        )
