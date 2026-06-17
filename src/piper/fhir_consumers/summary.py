@@ -1,10 +1,11 @@
 import logging
 from collections import defaultdict
 
+from .resource_consumer import ResourceConsumer
 from .utils import Console, Table, print_table
 
 
-class ResourceSummary:
+class ResourceSummary(ResourceConsumer):
     def __init__(self):
         self.local_counts = defaultdict(int)
         self.total_counts = defaultdict(int)
@@ -13,7 +14,7 @@ class ResourceSummary:
         self.local_counts[payload["resourceType"]] += 1
         self.total_counts[payload["resourceType"]] += 1
 
-    def reset(self, title, report_locals=True):
+    def reset(self, title, report_locals=True, console=None):
         """reset the local counts back to an empty dict"""
         old_counts = dict(self.local_counts)
 
@@ -27,10 +28,10 @@ class ResourceSummary:
                 table.add_row(str(resource), str(count))
 
         self.local_counts = defaultdict(int)
-        print_table(table)
+        print_table(table, console=console)
         return old_counts
 
-    def report_totals(self, title):
+    def report_totals(self, title, console=None):
         table = Table(
             title=title, row_styles=["cyan", ""], title_style="black on white"
         )
@@ -40,4 +41,4 @@ class ResourceSummary:
         for resource, count in self.total_counts.items():
             table.add_row(str(resource), str(count))
 
-        print_table(table)
+        print_table(table, console=console)

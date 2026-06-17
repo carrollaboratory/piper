@@ -28,7 +28,7 @@ else:
     # Minimal stub that mimics the Rich Progress interface
     class Progress:
         def __init__(self, *args, **kwargs):
-            pass
+            console = None
 
         def __enter__(self):
             return self
@@ -52,8 +52,9 @@ else:
 if _USE_RICH:
     Table = RichTable
 
-    def print_table(table):
-        Console().print(table)
+    def print_table(table, console=None):
+        con = console or Console()
+        con.print(table)
 else:
     """Stub out a text friendly table for reporting"""
 
@@ -69,7 +70,7 @@ else:
         def add_row(self, *args, **kwargs):
             self.rows.append([str(x) for x in args])
 
-    def print_table(table):
+    def print_table(table, console=None):
         if table.title:
             logging.info(f"\n--- {table.title} ---")
 
