@@ -61,7 +61,7 @@ from . import (
     get_template_error_info,
 )
 from .exceptions import ProjectionError
-from .harmony import Harmony
+from .projection_helpers import JinjaJSONEncoder, ProjectionHelpers
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -111,14 +111,14 @@ class TemplateProjector:
         logging.info(f"Projection Directory: '{template_dir}")
         self.env = Environment(loader=FileSystemLoader(self.template_dir))
 
+        self.env.policies["json.dumps_kwargs"] = {"cls": JinjaJSONEncoder}
         self.datamodel = data_model
 
-        self.harmony = None
-        if harmony_file and harmony_file.exists():
-            self.harmony = Harmony(str(harmony_file))
+        self.projection_helpers = ProjectionHelpers(
+            curie_map=TemplateProjector.curie_map, harmony=str(harmony_file)
+        )
 
-        self.env.globals["HARMONIZE"] = self.harmony
-        self.env.globals["SYSTEMS"] = TemplateProjector.curie_map
+        self.env.globals["util"] = self.projection_helpers
         self.templates = {}
         self.resource_consumers = resource_consumers
 
