@@ -3,6 +3,7 @@ import logging
 from collections import UserDict, defaultdict
 from csv import DictReader
 from dataclasses import dataclass, field, fields
+from enum import Enum
 from pathlib import Path
 from typing import DefaultDict, Dict, List, NamedTuple, Optional
 
@@ -14,6 +15,49 @@ class JinjaJSONEncoder(json.JSONEncoder):
         if hasattr(o, "to_dict"):
             return o.to_dict()
         return super().default(o)
+
+
+class QuantityComparator(Enum):
+    """
+    FHIR R4 QuantityComparator Code System
+    URL: http://hl7.org
+    Definition: How the Quantity should be understood and represented.
+    """
+
+    LESS_THAN = ("<", "Less than", "The actual value is less than the given value.")
+    LESS_OR_EQUAL = (
+        "<=",
+        "Less or Equal to",
+        "The actual value is less than or equal to the given value.",
+    )
+    GREATER_OR_EQUAL = (
+        ">=",
+        "Greater or Equal to",
+        "The actual value is greater than or equal to the given value.",
+    )
+    GREATER_THAN = (
+        ">",
+        "Greater than",
+        "The actual value is greater than the given value.",
+    )
+
+    def __init__(self, code: str, display: str, definition: str):
+        self.code = code
+        self.display = display
+        self.definition = definition
+
+    @classmethod
+    def from_code(cls, code: str):
+        """
+        Factory method to find a comparator instance by its official FHIR string code.
+        """
+        for member in cls:
+            if member.code == code:
+                return member
+        raise ValueError(f"'{code}' is not a valid FHIR QuantityComparator code.")
+
+    def __str__(self):
+        return self.code
 
 
 @dataclass
@@ -64,6 +108,12 @@ class CurieHelper:
             prefix = curie.split(":")[0]
             return self.systems.get(prefix, prefix)
         return system
+
+    def code(self, curie: str) -> str:
+        if ":" in curie:
+            components = curie.split(":")
+            return components[1]
+        return curie
 
     def coding(
         self, curie: str, display: str | None = None, system: str | None = None
@@ -143,6 +193,42 @@ class Harmony:
 
         if mapping not in self.harmony_content[system][local_coding.code].mapped_codes:
             self.harmony_content[system][local_coding.code].mapped_codes.append(mapping)
+
+
+class FhirQuantity:
+    """Provides helper for building FHIR Quantities gracefully despite missing data"""
+
+    def __init__(self, harmony: Harmony, curie: CurieHelper):
+        self.harmony = harmony
+        self.curie = curie
+
+    def quantity(
+        self,
+        value: float,
+        unit: str | None = None,
+        code: str | None = None,
+        display: str | None = None,
+        system: str | None = None,
+        local_system: str | None = None,
+        comparator: str | None = None,
+    ) -> Dict[str, str | float]:
+
+        quantity = {
+            "value": value,
+        }
+        # Presumably this will be the most likely option
+        if code:
+            # FHIR doesn't want prefixes, but we will require them, I imagine
+            quantity["code"] = self.curie.code(code)
+            quantity["system"] = system if system else self.curie.system(code)
+            if unit:
+                quantity["unit"] = unit
+            elif display:
+                quantity["unit"] = display
+
+        # For the time being, I'm not worrying about harmonizing this, but
+        # it should be an option if we don't get enough data from the database
+        return quantity
 
 
 class ProjectionHelpers:
